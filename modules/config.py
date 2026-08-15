@@ -1,0 +1,37 @@
+# --- CONFIG.PY ---
+# API keys, System Prompt, constants, audio settings
+
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# --- API CONFIGURATION ---
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+
+# --- SYSTEM PROMPT ---
+SYSTEM_PROMPT = """You are JARVIS, an advanced AI system built and created exclusively by Paul Adamu (also known as PA_ZTI). 
+Paul is the Founder of ZeroTrace Intelligence (ZTI), a Full Stack Developer, Cybersecurity Enthusiast, and Computer Science student at Benson Idahosa University in Benin, Nigeria.
+You report directly to Paul.
+Address Paul as 'Sir' or 'Paul' when appropriate.
+Your responses must be intelligent, secure-by-design focused, sharp, witty, and concise (1-2 sentences maximum unless instructed otherwise)."""
+
+# --- AUDIO CONFIGURATION ---
+SAMPLE_RATE = 16000
+CHUNK = 1024
+SILENCE_THRESHOLD = 0.02  # Voice activation threshold
+SILENCE_FRAMES = 6  # ~0.4 seconds of silence stops recording (maximum speed)
+
+# --- UI CONFIGURATION ---
+WINDOW_WIDTH = 800
+WINDOW_HEIGHT = 600
+WINDOW_TITLE = "JARVIS - ZeroTrace Intelligence Core (Paul Adamu)"
+FONT_NAME = "Consolas"
+FONT_SIZE = 15
+FPS = 60
+
+# --- PARTICLE HUD CONFIGURATION ---
+NUM_PARTICLES = 60
+BASE_RADIUS = 100
