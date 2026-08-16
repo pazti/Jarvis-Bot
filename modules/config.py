@@ -24,6 +24,9 @@ CHUNK = 1024
 SILENCE_THRESHOLD = 0.02  # Voice activation threshold
 SILENCE_FRAMES = 6  # ~0.4 seconds of silence stops recording (maximum speed)
 
+# --- MEMORY CONFIGURATION ---
+MEMORY_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "jarvis_memory.db")
+
 # --- UI CONFIGURATION ---
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 600

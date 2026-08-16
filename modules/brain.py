@@ -5,9 +5,17 @@ import os
 import tempfile
 import wave
 from groq import Groq
-from modules.config import GROQ_API_KEY, SYSTEM_PROMPT, SAMPLE_RATE
+from modules.config import GROQ_API_KEY, SYSTEM_PROMPT, SAMPLE_RATE, MEMORY_DB_PATH
 from modules.tts import speak
 from modules.vision import describe_screen_for_task, should_shutdown, should_wake
+from modules.memory import (
+    build_memory_context,
+    forget_memory,
+    get_memory_summary,
+    remember_from_prompt,
+    save_message,
+    trim_conversation_for_summary,
+)
 
 # Initialize Groq client
 client = None
@@ -66,6 +74,44 @@ def ask_groq(prompt, update_callbacks):
             print(f"[BRAIN] Vision request detected. Capturing screen...")
             screen_analysis = describe_screen_for_task(client, prompt)
             print(f"[BRAIN] Screen analysis complete")
+
+        memory_action = None
+        lower_prompt = prompt.lower()
+
+        if "show my memory" in lower_prompt or "what do you remember" in lower_prompt:
+            category = "general"
+            if "work" in lower_prompt:
+                category = "work"
+            elif "personal" in lower_prompt:
+                category = "personal"
+            elif "developer" in lower_prompt or "coding" in lower_prompt or "programming" in lower_prompt:
+                category = "developer_preferences"
+
+            memory_summary = get_memory_summary(db_path=MEMORY_DB_PATH, category=category)
+            update_callbacks["response"](memory_summary)
+            speak(memory_summary)
+            update_callbacks["processing"](False)
+            update_callbacks["skip_audio"](False)
+            return
+
+        if "remember this" in lower_prompt or "remember that" in lower_prompt:
+            memory_action = remember_from_prompt(prompt, db_path=MEMORY_DB_PATH)
+        elif "forget that" in lower_prompt or "forget" in lower_prompt:
+            memory_action = forget_memory(prompt, db_path=MEMORY_DB_PATH)
+
+        if memory_action is not None and isinstance(memory_action, str):
+            update_callbacks["response"](f"Memory saved: {memory_action}")
+            speak(f"Memory saved: {memory_action}")
+            update_callbacks["processing"](False)
+            update_callbacks["skip_audio"](False)
+            return
+
+        if memory_action is False:
+            update_callbacks["response"]("I cleared the matching memory entry.")
+            speak("I cleared the matching memory entry.")
+            update_callbacks["processing"](False)
+            update_callbacks["skip_audio"](False)
+            return
         
         update_callbacks["status"]("JARVIS is thinking...")
         print(f"[BRAIN] Calling Groq API...")
@@ -75,15 +121,22 @@ def ask_groq(prompt, update_callbacks):
         if screen_analysis:
             user_message = f"{prompt}\n\n[SCREEN ANALYSIS]:\n{screen_analysis}"
 
+        memory_context = build_memory_context(db_path=MEMORY_DB_PATH, recent_limit=8, fact_limit=10)
+        memory_prefix = ""
+        if memory_context:
+            memory_prefix = f"\n\n[MEMORY CONTEXT]\n{memory_context}\n"
+
         chat_completion = client.chat.completions.create(
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": SYSTEM_PROMPT + memory_prefix},
                 {"role": "user", "content": user_message},
             ],
             model="llama-3.3-70b-versatile",
         )
 
         response = chat_completion.choices[0].message.content.strip()
+        save_message("assistant", response, db_path=MEMORY_DB_PATH)
+        trim_conversation_for_summary(db_path=MEMORY_DB_PATH, max_messages=25)
         print(f"[BRAIN] Got response: '{response[:50]}...'")
         update_callbacks["status"]("JARVIS speaking...")
         update_callbacks["response"](response)
@@ -139,6 +192,8 @@ def transcribe_audio(audio_bytes, update_callbacks):
         print(f"[BRAIN] Transcription result: '{text}'")
 
         if text and len(text) > 2:
+            remember_from_prompt(text, db_path=MEMORY_DB_PATH)
+            save_message("user", text, db_path=MEMORY_DB_PATH)
             user_text = f"Paul: '{text}'"
             update_callbacks["user_text"](user_text)
             print(f"\n[PAUL ADAMU]: {text}")

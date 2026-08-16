@@ -18,6 +18,14 @@ from modules.config import (
 status_text = "Listening... Speak into your mic, Sir!"
 user_text = ""
 ai_response_text = ""
+MEMORY_COMMANDS = [
+    "remember this: ...",
+    "forget that: ...",
+    "show my memory",
+    "show my work memory",
+    "show my personal memory",
+    "show my developer memory",
+]
 
 # Pygame objects
 screen = None
@@ -87,6 +95,13 @@ def render_frame(current_volume):
     # Status HUD
     status_surf = font.render(status_text, True, (0, 220, 255))
     screen.blit(status_surf, (20, WINDOW_HEIGHT - 110))
+
+    # Memory command panel
+    panel_title = font.render("Memory commands", True, (255, 200, 120))
+    screen.blit(panel_title, (WINDOW_WIDTH - 285, 20))
+    for i, command in enumerate(MEMORY_COMMANDS[:6]):
+        label = font.render(f"• {command}", True, (200, 220, 255))
+        screen.blit(label, (WINDOW_WIDTH - 285, 42 + (i * 18)))
 
     # User Text
     if user_text:
