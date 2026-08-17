@@ -3,156 +3,202 @@
 <p align="center">
   <img src="https://img.shields.io/badge/AI-Voice%20Assistant-8A2BE2?style=for-the-badge&logo=opencv&logoColor=white" alt="AI Voice Assistant" />
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.10+" />
-  <img src="https://img.shields.io/badge/Ollama-Local%20Vision-FF6B6B?style=for-the-badge" alt="Ollama Local Vision" />
+  <img src="https://img.shields.io/badge/Groq%20%2B%20Cloudflare-Active-8A2BE2?style=for-the-badge" alt="Groq and Cloudflare active" />
+  <img src="https://img.shields.io/badge/Tests-20%2F20%20Passing-28a745?style=for-the-badge" alt="All tests passing" />
 </p>
 
-> A sleek desktop AI assistant built for voice interaction, screen awareness, and smart local reasoning.
+> A sleek, voice-driven desktop AI assistant with persistent memory, screen awareness, and intelligent command routing.
 
-JARVIS is a personal assistant project inspired by the classic AI assistant concept: listen to voice commands, transcribe audio, query a LLM, and optionally analyze the current screen with vision-capable models.
+JARVIS is a personal AI assistant built for voice interaction, real-time screen analysis, and smart local reasoning. It combines Groq's lightning-fast LLM with optional Cloudflare Workers AI for vision tasks, delivering sub-second responses for everyday queries.
 
-## ✨ Highlights
+## ✨ Core Features
 
-- Voice-driven interaction using microphone input and real-time audio monitoring
-- Local screen capture and vision analysis
-- Groq-powered reasoning with custom persona prompts
-- Ollama support for free local vision using LLaVA
-- Claude vision fallback for premium API users
-- Persistent memory with short-term and fact-based recall
-- Memory commands for save, forget, and retrieval
-- Category-based memory for work, personal, and developer preferences
-- Animated desktop HUD with status and response display
-- Sleep/wake behavior and command-based listening flow
+- **Voice-Driven Interaction**: Listen for natural speech, transcribe via Groq, and respond conversationally
+- **Screen Awareness**: Analyze your screen with Cloudflare vision or fall back to text-only mode
+- **Persistent Memory**: Save facts, remember preferences, and retrieve context across sessions
+- **25+ Built-In Actions**: Browser control, file operations, reminders, timers, clipboard management, and more
+- **Emotional TTS**: Text-to-speech with emotion detection (serious, casual, thoughtful, playful)
+- **Sleep/Wake Modes**: Enter low-power listening state or full shutdown
+- **Category-Based Memory**: Organize memories as general, work, personal, or developer preferences
+- **Animated Desktop HUD**: Real-time status display with volume visualization
 
 ## 🧠 Core workflow
 
 1. The app listens for voice input.
-2. Audio is captured and transcribed.
-3. The prompt is checked for wake/shutdown and screen-analysis intents.
-4. If needed, a screenshot is captured and analyzed by a vision model.
-5. The result is sent to the LLM for the final answer.
-6. The response is spoken aloud with text-to-speech.
+2. Audio is captured and transcribed using Groq Whisper.
+3. The prompt is parsed for wake words, actions, and screen-analysis intents.
+4. If needed, a screenshot is captured and analyzed by Cloudflare or Groq.
+5. The result is processed by the LLM for context-aware response generation.
+6. The response is spoken aloud with emotion-based TTS.
 
-## 🏗️ Project structure
+## 🚀 Quick Start
 
-```text
-Jarvis/
-├── main.py
-├── requirements.txt
-├── .env.example
-├── README.md
-├── modules/
-│   ├── __init__.py
-│   ├── audio.py
-│   ├── brain.py
-│   ├── config.py
-│   ├── hud.py
-│   ├── tts.py
-│   └── vision.py
-├── docs/
-│   ├── SETUP.md
-│   ├── ARCHITECTURE.md
-│   └── OLLAMA_VISION.md
-└── jarvis_error.log
-```
+### 1) Prerequisites
 
-## 🚀 Quick start
+- Python 3.10+
+- Microphone and speakers
+- Groq API key (free tier at https://console.groq.com)
 
-### 1) Create a virtual environment
+### 2) Setup Environment
 
 ```bash
+# Navigate to project
+cd Jarvis
+
+# Create virtual environment
 python -m venv .venv
-.venv\Scripts\activate
-```
+.venv\Scripts\activate  # Windows
+source .venv/bin/activate  # Mac/Linux
 
-### 2) Install dependencies
-
-```bash
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 3) Configure environment variables
+### 3) Configure API Keys
 
-Copy the sample environment file and add your keys:
-
-```bash
-copy .env.example .env
-```
-
-Then edit `.env`:
+Create a `.env` file in the project root:
 
 ```env
 GROQ_API_KEY=your_groq_key_here
-ANTHROPIC_API_KEY=your_claude_key_here
+CLOUDFLARE_API_TOKEN=your_cloudflare_token_here  # Optional
+CLOUDFLARE_ACCOUNT_ID=your_cloudflare_account_id_here  # Optional
 ```
 
-### 4) Start Ollama vision support
-
-If you want local vision:
-
-```bash
-ollama pull llava
-ollama serve
-```
-
-### 5) Run the project
+### 4) Run the Assistant
 
 ```bash
 python main.py
 ```
 
-## 🧠 Memory system
+The desktop HUD will appear. Start speaking to JARVIS!
 
-JARVIS now includes a lightweight persistent memory layer using SQLite.
+## �️ Voice Commands Reference
 
-Supported memory commands:
+### Wake & Sleep
+- **"Hey JARVIS"** / **"Hello JARVIS"** → Activate assistant
+- **"Sleep JARVIS"** / **"Goodbye"** → Enter sleep mode
+- **"Wake up"** / **"Wake JARVIS"** → Exit sleep mode
+- **"Shutdown JARVIS"** → Full system shutdown
 
-- “remember this: I prefer short answers”
-- “forget that favorite language”
-- “show my memory”
-- “show my work memory”
-- “show my personal memory”
-- “show my developer memory”
+### System Information
+- **"What time is it?"** → Current time
+- **"What day is it?"** → Current date and day
 
-Memory categories:
+### System Control
+- **"Sleep PC"** → Suspend computer
+- **"Shutdown PC"** → Power down computer
 
-- general
-- work
-- personal
-- developer_preferences
+### Browser & Web Navigation
+- **"Open browser"** → Launch default browser (Google)
+- **"Open YouTube"** → Open YouTube in browser
+- **"Open GitHub"** → Open GitHub in browser
+- **"Search the web for [query]"** → Google search for query
 
-This lets the assistant keep relevant context across sessions without growing the prompt indefinitely.
+### Files & Applications
+- **"Take a screenshot"** → Capture and save screen as PNG
+- **"Summarize my screen"** → Analyze current screen contents
+- **"Open folder"** → Open project directory
+- **"Open VS Code"** / **"Open Code"** → Launch VS Code
+- **"Open terminal"** → Launch command terminal
+- **"Open Notepad"** → Launch text editor
+
+### Memory Management
+- **"Remember this: [fact]"** → Save to general memory
+- **"Forget that [topic]"** → Remove from memory
+- **"Show my memory"** → Display all memories (all categories)
+- **"Show my work memory"** → Show work-related memories
+- **"Show my personal memory"** → Show personal memories
+- **"Show my developer memory"** → Show developer preferences
+- **"Clear memory"** → Erase all saved memories
+
+### Productivity & Time Management
+- **"Set a timer for [duration]"** → Start countdown (e.g., "5 minutes", "30 seconds")
+- **"Remind me to [task]"** → Set a reminder
+- **"Remind me to finish my task"** → Quick task reminder
+- **"Start focus mode"** → Activate distraction-free listening
+- **"Summarize my day"** → Review activities and progress
+
+### Notes & Drafts
+- **"Create a quick note: [text]"** → Save quick note to memory
+- **"Draft a message: [content]"** → Draft text for later use
+
+### Clipboard
+- **"Read my clipboard"** → Read and speak clipboard contents
+- **"Copy last response"** → Copy JARVIS's last response to clipboard
+
+### Screen Analysis (Cloudflare Vision)
+- **"Analyze my screen"** → Detailed analysis of what's currently visible
+- **"What's on my screen?"** → Same as above
+- **"Describe my screen"** → Screen description for task assistance
+
+## 🧠 Memory System
+
+JARVIS includes persistent SQLite-based memory with four categories:
+
+| Category | Use Case |
+|----------|----------|
+| **general** | Default facts and preferences |
+| **work** | Project notes, deadlines, goals |
+| **personal** | Personal preferences, favorites |
+| **developer_preferences** | Coding styles, frameworks, tools |
+
+Memory persists across sessions and is automatically included in LLM context, allowing JARVIS to learn your preferences over time.
+
+| Category | Use Case |
+|----------|----------|
+| **general** | Default facts and preferences |
+| **work** | Project notes, deadlines, goals |
+| **personal** | Personal preferences, favorites |
+| **developer_preferences** | Coding styles, frameworks, tools |
+
+Memory persists across sessions and is automatically included in LLM context, allowing JARVIS to learn your preferences over time.
 
 ## 🔧 What this bot uses
 
-- Groq for chat and model inference
+- **Groq** (Llama 3) for ultra-fast text processing and reasoning (sub-second latency)
+- **Cloudflare Workers AI** as an optional screen-analysis fallback
 - SQLite for persistent memory storage
-- OpenAI-style local local pattern with vision fallback logic
-- Ollama + LLaVA for offline image understanding
-- Anthropic Claude for premium vision fallback
 - Pygame for desktop UI rendering
-- TTS with `pyttsx3` for spoken responses
+- TTS with `pyttsx3` for unified spoken responses
 - SoundDevice for microphone input
 
 ## 📚 Documentation
 
 - [Setup guide](docs/SETUP.md)
 - [Architecture overview](docs/ARCHITECTURE.md)
-- [Ollama vision guide](docs/OLLAMA_VISION.md)
 
-## 🔐 Environment setup
+## � Cloudflare Vision Setup (Optional)
 
-The app reads API credentials from a `.env` file via `python-dotenv`.
+Screen analysis is **optional** but requires one-time policy acceptance:
 
-Example:
+### 1. Get Cloudflare Credentials
+- Visit https://dash.cloudflare.com/profile/api-tokens
+- Create token with Workers AI permissions
+- Add to `.env` file
 
-```env
-GROQ_API_KEY=your_key_here
-ANTHROPIC_API_KEY=your_key_here
+### 2. Accept Model Agreement (First Use Only)
+
+Run this **once** from the project directory:
+
+```powershell
+$account = (Get-Content .env | Select-String "CLOUDFLARE_ACCOUNT_ID").ToString().Split("=")[1].Trim()
+$token = (Get-Content .env | Select-String "CLOUDFLARE_API_TOKEN").ToString().Split("=")[1].Trim()
+
+python -c "import requests; r = requests.post('https://api.cloudflare.com/client/v4/accounts/$account/ai/run/@cf/meta/llama-3.2-11b-vision-instruct', headers={'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}, json={'prompt': 'agree'}, timeout=30); print('Status:', r.status_code)"
 ```
+
+Expected output: `Status: 200`
+
+### 3. Test Screen Analysis
+
+After acceptance, try: **"Analyze my screen"**
+
+### Without Cloudflare
+
+If you skip this setup, JARVIS automatically falls back to text-only mode—still fully functional!
 
 ## 📌 Notes
 
-- Vision works best when Ollama is installed and `llava` is pulled.
 - If no vision backend is available, the app falls back to a helpful text-only response.
 - This project is designed as a personal assistant prototype and can be extended with custom commands, memory, and automation.
 

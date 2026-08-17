@@ -1,150 +1,139 @@
 # --- VISION.PY ---
-# Screen capture & Vision API for screen analysis
+# Screen capture & Vision API for screen analysis (Cloudflare → text fallback)
 
 import base64
 import io
 import json
+import re
+import requests
 from PIL import ImageGrab
-from modules.config import ANTHROPIC_API_KEY
+from modules.config import CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
 
-VISION_MODELS = [
-    "llama-3.2-90b-vision-preview",  # Original Groq vision model
-    "llama-3.2-11b-vision-preview",  # Backup option
-    "qwen-vl-max",                   # Qwen's vision-language model if available
-    "qwen-vl-plus",                  # Qwen vision variant
-    "llama-3.2-vision-preview",      # Alternative Llama
-    "llava-1.5-7b-hf",               # LLaVA if available
-]
 
-# Initialize Anthropic client if API key is available
-anthropic_client = None
-if ANTHROPIC_API_KEY:
-    try:
-        from anthropic import Anthropic
-        anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
-        print("[VISION] Anthropic Claude client initialized for vision")
-    except Exception as e:
-        print(f"[VISION] Failed to initialize Anthropic client: {e}")
+def _normalize_prompt(prompt):
+    return " ".join((prompt or "").lower().split())
+
+
+def _matches_any(prompt, phrases):
+    normalized = _normalize_prompt(prompt)
+    if not normalized:
+        return False
+    for phrase in phrases:
+        if re.search(rf"\b{re.escape(phrase)}\b", normalized):
+            return True
+    return False
+
+
+# Initialize Cloudflare Workers AI client
+cloudflare_ready = False
+if CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID:
+    print("[VISION] CLOUDFLARE_API_TOKEN found")
+    print("[VISION] CLOUDFLARE_ACCOUNT_ID found")
+    cloudflare_ready = True
+    print("[VISION] Cloudflare Workers AI enabled as fallback")
+    print("[VISION] Cloudflare vision requires policy acceptance before image analysis works. Run the 'agree' prompt once for this account, or Cloudflare will reject screen-analysis requests with a 403 error.")
 else:
-    print("[VISION] ANTHROPIC_API_KEY not found - Claude vision unavailable")
+    print("[VISION] Cloudflare credentials not found - Workers AI vision unavailable")
 
-# Try to initialize Ollama client for local vision (FREE!)
-ollama_available = False
-try:
-    import requests
-    # Test if Ollama is running
-    response = requests.get("http://localhost:11434/api/tags", timeout=2)
-    if response.status_code == 200:
-        models = response.json().get("models", [])
-        if any("llava" in m.get("name", "").lower() for m in models):
-            ollama_available = True
-            print("[VISION] Ollama with LLaVA detected - local vision available!")
+
+def _call_cloudflare_vision(prompt, base64_image):
+    """Call Cloudflare Workers AI for vision analysis using the supported model route."""
+    if not cloudflare_ready:
+        return None
+
+    model_url = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/meta/llama-3.2-11b-vision-instruct"
+    headers = {
+        "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    def _post(payload):
+        return requests.post(model_url, headers=headers, json=payload, timeout=30)
+
+    try:
+        print("[VISION] Attempting Cloudflare Workers AI vision...")
+
+        agreement_payload = {"prompt": "agree"}
+        agreement_response = _post(agreement_payload)
+        if agreement_response.status_code == 403 and "Model Agreement" in (agreement_response.text or ""):
+            print("[VISION] Model agreement not yet accepted. Retrying with required agreement prompt...")
+            agreement_result = agreement_response.json() if hasattr(agreement_response, "json") else {}
+            if not isinstance(agreement_result, dict):
+                agreement_result = {}
+            if "result" in agreement_result:
+                print("[VISION] Cloudflare model agreement already accepted.")
+
+        payload = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            },
+                        },
+                    ],
+                }
+            ],
+            "max_tokens": 256,
+            "temperature": 0.2,
+        }
+
+        response = _post(payload)
+
+        if response.status_code == 200:
+            result = response.json()
+            if isinstance(result, dict):
+                text = None
+                if "result" in result and isinstance(result["result"], dict):
+                    text = result["result"].get("response") or result["result"].get("answer")
+                elif "response" in result:
+                    text = result.get("response")
+
+                if text:
+                    print("[VISION] Cloudflare vision succeeded!")
+                    return str(text).strip()
+        elif response.status_code == 403 and "Model Agreement" in (response.text or ""):
+            print("[VISION] Cloudflare vision requires policy acceptance. Submit the 'agree' prompt once for this account to unlock the model.")
+            return None
         else:
-            print("[VISION] Ollama running but LLaVA not found. Run: ollama pull llava")
-except Exception as e:
-    print(f"[VISION] Ollama not available (install from ollama.ai): {e}")
+            print(f"[VISION] Cloudflare returned status {response.status_code}")
+            print(f"[VISION] Response: {response.text[:200]}")
+    except Exception as e:
+        print(f"[VISION] Cloudflare vision failed: {e}")
+
+    return None
 
 
 def _call_vision_model(client, prompt, base64_image):
-    """Try vision models in order: Ollama (free), Claude (paid), Groq (decommissioned)."""
-    
-    # Try Ollama FIRST (FREE and LOCAL!)
-    if ollama_available:
-        try:
-            print("[VISION] Attempting local Ollama + LLaVA vision...")
-            import requests
-            
-            response = requests.post(
-                "http://localhost:11434/api/generate",
-                json={
-                    "model": "llava",
-                    "prompt": prompt,
-                    "images": [base64_image],
-                    "stream": False,
-                },
-                timeout=60,
-            )
-            
-            if response.status_code == 200:
-                result = response.json().get("response", "").strip()
-                if result:
-                    print("[VISION] Ollama vision succeeded!")
-                    return result
-        except Exception as e:
-            print(f"[VISION] Ollama vision failed: {e}")
-    
-    # Try Claude vision (requires API credits)
-    if anthropic_client:
-        try:
-            print("[VISION] Attempting Claude 3.5 Sonnet vision...")
-            response = anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=1024,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/jpeg",
-                                    "data": base64_image,
-                                },
-                            },
-                            {
-                                "type": "text",
-                                "text": prompt,
-                            },
-                        ],
-                    }
-                ],
-            )
-            result = response.content[0].text.strip()
-            print("[VISION] Claude vision succeeded!")
-            return result
-        except Exception as e:
-            print(f"[VISION] Claude vision failed: {e}")
-    
-    # Fallback to Groq vision models
-    data_url = f"data:image/jpeg;base64,{base64_image}"
-    last_error = None
+    """Try Cloudflare Workers AI first, then fall back to a text-only Groq response."""
+    # Try Cloudflare Workers AI (preferred fallback)
+    cloudflare_result = _call_cloudflare_vision(prompt, base64_image)
+    if cloudflare_result:
+        return cloudflare_result
 
-    for model in VISION_MODELS:
+    # Final fallback: text-only response via Groq
+    print("[VISION] Cloudflare vision requires policy acceptance. Falling back to text-only mode until the model agreement is accepted.")
+    if client:
         try:
             response = client.chat.completions.create(
-                model=model,
+                model="llama-3.3-70b-versatile",
                 messages=[
                     {
                         "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {"type": "image_url", "image_url": {"url": data_url, "detail": "low"}},
-                        ],
+                        "content": f"The user asked: '{prompt}'. Screen vision analysis is currently unavailable. Provide a helpful response acknowledging this limitation and offer to help them describe what they see or assist in another way. Keep it brief and professional.",
                     }
                 ],
+                max_tokens=256,
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
-            last_error = e
-            print(f"[VISION] Vision model '{model}' failed: {e}")
+            print(f"[VISION] Fallback text model also failed: {e}")
 
-    # Fallback: Try using a text-only model to respond helpfully
-    print("[VISION] No vision models available, using text-based response...")
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"The user asked: '{prompt}'. Screen vision analysis is currently unavailable. Provide a helpful response acknowledging this limitation and offer to help them describe what they see or assist in another way. Keep it brief and professional.",
-                }
-            ],
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"[VISION] Fallback text model also failed: {e}")
-        raise RuntimeError(f"No supported vision model worked. Last error: {last_error}")
+    raise RuntimeError("No supported vision model worked. Check API keys and internet connection.")
 
 
 def capture_screen():
@@ -218,32 +207,62 @@ def should_analyze_screen(prompt):
 
 def should_shutdown(prompt):
     """
-    Determines if the user is asking JARVIS to shut down.
-    Returns True if shutdown keywords are detected.
+    Determines if the user is explicitly asking JARVIS to shut down.
+    This intentionally excludes farewell keywords handled separately.
     """
+    prompt_lower = _normalize_prompt(prompt)
+    if "nadia" in prompt_lower:
+        return False
+
     keywords = [
-        "shutdown", "shut down", "exit", "quit", "close", "stop",
-        "goodbye", "bye", "see you", "turn off", "power off", "terminate",
-        "end", "finish", "sleep", "hibernate"
+        "shutdown", "shut down", "power off", "turn off", "exit app",
+        "quit app", "close app", "terminate", "end session", "complete shutdown"
     ]
-    
-    prompt_lower = prompt.lower()
-    return any(keyword in prompt_lower for keyword in keywords)
+    return _matches_any(prompt_lower, keywords)
 
 
 def should_wake(prompt):
     """
     Determines if the user is trying to wake up JARVIS.
-    Returns True if wake keywords are detected.
+    Avoid false positives from other names or generic greetings.
     """
-    keywords = [
-        "hello", "wake", "wake up", "hey jarvis", "jarvis",
-        "hi", "good morning", "good afternoon", "good evening",
-        "you there", "are you there"
+    prompt_lower = _normalize_prompt(prompt)
+    if "nadia" in prompt_lower:
+        return False
+
+    if not prompt_lower:
+        return False
+
+    if "jarvis" not in prompt_lower:
+        return False
+
+    wake_phrases = [
+        "hello jarvis", "hey jarvis", "hi jarvis",
+        "wake up jarvis", "jarvis wake up", "wake jarvis",
+        "good morning jarvis", "good afternoon jarvis", "good evening jarvis",
+        "are you there jarvis", "jarvis are you there", "you there jarvis",
+        "jarvis hello", "jarvis hey", "jarvis hi",
     ]
-    
-    prompt_lower = prompt.lower()
-    return any(keyword in prompt_lower for keyword in keywords)
+
+    return _matches_any(prompt_lower, wake_phrases) or (
+        ("wake up" in prompt_lower or "are you there" in prompt_lower or "you there" in prompt_lower) and "jarvis" in prompt_lower
+    )
+
+
+def should_goodbye(prompt):
+    """
+    Determines if the user is saying goodbye (sleep with summary).
+    This is distinct from a hard shutdown command.
+    """
+    prompt_lower = _normalize_prompt(prompt)
+    if "nadia" in prompt_lower:
+        return False
+
+    keywords = [
+        "goodbye", "bye", "good night", "see you later", "see ya",
+        "catch you later", "take care", "talk to you later", "til later"
+    ]
+    return _matches_any(prompt_lower, keywords)
 
 
 def analyze_screen(client, groq_api_key):

@@ -16,6 +16,7 @@ from modules.memory import (
     save_message,
     trim_conversation_for_summary,
 )
+from modules.actions import run_action
 
 # Initialize Groq client
 client = None
@@ -48,7 +49,10 @@ def ask_groq(prompt, update_callbacks):
     if should_shutdown(prompt):
         shutdown_msg = "Goodbye, Sir. JARVIS entering sleep mode. Say 'Hello' to wake me."
         update_callbacks["response"](shutdown_msg)
-        speak(shutdown_msg)
+        try:
+            speak(shutdown_msg)
+        except Exception as e:
+            print(f"[BRAIN] speak() error: {e}")
         update_callbacks["status"]("JARVIS is sleeping... Say 'Hello' to wake")
         print("[BRAIN] SHUTDOWN command detected - entering sleep mode")
         # Trigger sleep mode
@@ -61,12 +65,28 @@ def ask_groq(prompt, update_callbacks):
     if not client:
         error_msg = "Please set GROQ_API_KEY in your .env file, Sir."
         update_callbacks["response"](error_msg)
-        speak(error_msg)
+        try:
+            speak(error_msg)
+        except Exception as e:
+            print(f"[BRAIN] speak() error: {e}")
         update_callbacks["processing"](False)
         update_callbacks["skip_audio"](False)
         return
 
     try:
+        action_result = run_action(prompt, update_callbacks, groq_client=client, db_path=MEMORY_DB_PATH)
+        if action_result is not None:
+            if action_result in {"SHUTDOWN", "SLEEP", "WAKE", "SLEEP_WITH_SUMMARY"}:
+                return action_result
+            if isinstance(action_result, str):
+                if "Memory saved" in action_result or "I cleared" in action_result or "Memory cleared" in action_result or "Opening" in action_result or "Screenshot" in action_result or "Launching" in action_result or "Saved:" in action_result or "what we discussed" in action_result:
+                    try:
+                        speak(action_result)
+                    except Exception as e:
+                        print(f"[BRAIN] speak() error: {e}")
+                    return action_result
+            return action_result
+
         # Check if user is asking to analyze the screen
         screen_analysis = None
         if should_analyze_screen(prompt):
@@ -89,7 +109,10 @@ def ask_groq(prompt, update_callbacks):
 
             memory_summary = get_memory_summary(db_path=MEMORY_DB_PATH, category=category)
             update_callbacks["response"](memory_summary)
-            speak(memory_summary)
+            try:
+                speak(memory_summary)
+            except Exception as e:
+                print(f"[BRAIN] speak() error: {e}")
             update_callbacks["processing"](False)
             update_callbacks["skip_audio"](False)
             return
@@ -101,14 +124,20 @@ def ask_groq(prompt, update_callbacks):
 
         if memory_action is not None and isinstance(memory_action, str):
             update_callbacks["response"](f"Memory saved: {memory_action}")
-            speak(f"Memory saved: {memory_action}")
+            try:
+                speak(f"Memory saved: {memory_action}")
+            except Exception as e:
+                print(f"[BRAIN] speak() error: {e}")
             update_callbacks["processing"](False)
             update_callbacks["skip_audio"](False)
             return
 
         if memory_action is False:
             update_callbacks["response"]("I cleared the matching memory entry.")
-            speak("I cleared the matching memory entry.")
+            try:
+                speak("I cleared the matching memory entry.")
+            except Exception as e:
+                print(f"[BRAIN] speak() error: {e}")
             update_callbacks["processing"](False)
             update_callbacks["skip_audio"](False)
             return
@@ -121,7 +150,7 @@ def ask_groq(prompt, update_callbacks):
         if screen_analysis:
             user_message = f"{prompt}\n\n[SCREEN ANALYSIS]:\n{screen_analysis}"
 
-        memory_context = build_memory_context(db_path=MEMORY_DB_PATH, recent_limit=8, fact_limit=10)
+        memory_context = build_memory_context(db_path=MEMORY_DB_PATH, recent_limit=12, fact_limit=20)
         memory_prefix = ""
         if memory_context:
             memory_prefix = f"\n\n[MEMORY CONTEXT]\n{memory_context}\n"
@@ -136,14 +165,17 @@ def ask_groq(prompt, update_callbacks):
 
         response = chat_completion.choices[0].message.content.strip()
         save_message("assistant", response, db_path=MEMORY_DB_PATH)
-        trim_conversation_for_summary(db_path=MEMORY_DB_PATH, max_messages=25)
-        print(f"[BRAIN] Got response: '{response[:50]}...'")
+        trim_conversation_for_summary(db_path=MEMORY_DB_PATH, max_messages=60)
+        print(f"[BRAIN] Got response from LLM")
         update_callbacks["status"]("JARVIS speaking...")
         update_callbacks["response"](response)
 
         print(f"\n[JARVIS]: {response}\n")
         print(f"[BRAIN] Calling speak()...")
-        speak(response)
+        try:
+            speak(response)
+        except Exception as e:
+            print(f"[BRAIN] speak() error: {e}")
         print(f"[BRAIN] speak() returned")
         # Let speak() run asynchronously - mic will stop while speaking
 
@@ -153,7 +185,7 @@ def ask_groq(prompt, update_callbacks):
         traceback.print_exc()
         update_callbacks["status"]("Error reaching Groq servers.")
     finally:
-        print(f"[BRAIN] ask_groq cleanup: setting processing=False, skip_audio=False")
+        print(f"[BRAIN] Recovered from error")
         update_callbacks["processing"](False)
         update_callbacks["skip_audio"](False)
         update_callbacks["status"]("Listening... Speak into your mic!")
@@ -166,7 +198,7 @@ def transcribe_audio(audio_bytes, update_callbacks):
     
     update_callbacks: dict with keys 'status', 'user_text', 'processing', 'skip_audio'
     """
-    print(f"[BRAIN] Starting transcription...")
+    print(f"[TRANSCRIPTION] Starting audio transcription...")
     update_callbacks["skip_audio"](True)
     update_callbacks["status"]("Processing audio with Whisper...")
 
@@ -180,7 +212,7 @@ def transcribe_audio(audio_bytes, update_callbacks):
             wf.setframerate(SAMPLE_RATE)
             wf.writeframes(audio_bytes)
 
-        print(f"[BRAIN] Sending to Whisper API...")
+        print(f"[TRANSCRIPTION] Sending audio to Whisper API...")
         # Transcribe audio using Groq Whisper Turbo
         with open(tmp_filename, "rb") as file:
             transcription = client.audio.transcriptions.create(
@@ -189,7 +221,7 @@ def transcribe_audio(audio_bytes, update_callbacks):
             )
 
         text = transcription.text.strip()
-        print(f"[BRAIN] Transcription result: '{text}'")
+        print(f"[TRANSCRIPTION] Audio transcribed: '{text[:60]}...'")
 
         if text and len(text) > 2:
             remember_from_prompt(text, db_path=MEMORY_DB_PATH)
@@ -216,10 +248,10 @@ def transcribe_audio(audio_bytes, update_callbacks):
         update_callbacks["skip_audio"](False)
         update_callbacks["status"]("Listening... Speak into your mic!")
     finally:
-        print(f"[BRAIN] Cleanup: removing temp file")
+        print(f"[BRAIN] Cleaning up temporary file")
         if os.path.exists(tmp_filename):
             os.remove(tmp_filename)
-        print(f"[BRAIN] transcribe_audio complete")
+        print(f"[BRAIN] Transcription complete")
 
 
 def check_wake_word(audio_bytes):

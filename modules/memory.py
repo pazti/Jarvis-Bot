@@ -335,3 +335,55 @@ def clear_memory(db_path=None):
     connection.execute("DELETE FROM memory_facts")
     connection.commit()
     connection.close()
+
+
+def create_session_summary(client, db_path=None):
+    """
+    Creates an AI-generated summary of the conversation session using Groq.
+    Returns a concise summary suitable for long-term storage.
+    
+    Args:
+        client: Groq client instance
+        db_path: Path to memory database
+    
+    Returns:
+        str: Generated summary of the session
+    """
+    # Get recent conversation
+    recent_conv = get_recent_conversation(db_path=db_path, limit=20)
+    
+    if not recent_conv:
+        return "No conversation to summarize."
+    
+    # Build conversation text
+    conversation_text = "\n".join([
+        f"{msg.get('role', 'unknown')}: {msg.get('content', '')}"
+        for msg in recent_conv
+    ])
+    
+    if not client:
+        return build_summary_from_conversation(recent_conv)
+    
+    try:
+        # Use Groq to create a meaningful summary
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"""Please create a brief, concise summary of this conversation session in 1-2 sentences. 
+Focus on the key topics discussed and any important information or preferences mentioned.
+
+Conversation:
+{conversation_text}
+
+Summary:"""
+                }
+            ],
+            max_tokens=150,
+        )
+        summary = response.choices[0].message.content.strip()
+        return summary
+    except Exception as e:
+        print(f"[MEMORY] Error creating AI summary: {e}")
+        return build_summary_from_conversation(recent_conv)

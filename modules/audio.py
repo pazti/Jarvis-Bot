@@ -32,7 +32,10 @@ def audio_callback(indata, frames, time, status):
     global current_volume, skip_audio
     if status:
         import sys
-        print(status, file=sys.stderr)
+        status_str = str(status).lower()
+        # Suppress input overflow warnings - they're expected under heavy load
+        if "overflow" not in status_str:
+            print(status, file=sys.stderr)
 
     # Don't record if we're processing or if JARVIS is currently speaking
     if skip_audio or is_speaking():
