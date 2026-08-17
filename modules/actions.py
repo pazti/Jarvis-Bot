@@ -46,10 +46,10 @@ def run_action(prompt, update_callbacks=None, groq_client=None, db_path=None):
     if "wake" in lower or "wake up" in lower:
         return wake_action(update_callbacks)
 
-    if "what time is it" in lower or "current time" in lower or "time is it" in lower:
+    if "what time" in lower or "current time" in lower or "tell me the time" in lower or "time is it" in lower:
         return time_action(update_callbacks)
 
-    if "what day is it" in lower or "what date is it" in lower or "current date" in lower or "date is it" in lower:
+    if "what day" in lower or "what date" in lower or "current date" in lower or "date is it" in lower:
         return date_action(update_callbacks)
 
     if "show my memory" in lower or "what do you remember" in lower:
