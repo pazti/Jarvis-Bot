@@ -2,6 +2,8 @@ import os
 import re
 import sqlite3
 
+from modules.config import GROQ_MODEL
+
 DEFAULT_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "jarvis_memory.db")
 _ACTIVE_DB_PATH = DEFAULT_DB_PATH
 
@@ -367,7 +369,7 @@ def create_session_summary(client, db_path=None):
     try:
         # Use Groq to create a meaningful summary
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=GROQ_MODEL,
             messages=[
                 {
                     "role": "user",

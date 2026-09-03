@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote_plus
 
-from modules.config import MEMORY_DB_PATH
+from modules.config import GROQ_MODEL, MEMORY_DB_PATH
 from modules.memory import clear_memory, get_memory_summary
 
 LAST_RESPONSE = ""
@@ -24,6 +24,16 @@ def run_action(prompt, update_callbacks=None, groq_client=None, db_path=None):
     lower = (prompt or "").lower().strip()
     if not lower:
         return None
+
+    if any(phrase in lower for phrase in [
+        "open my code",
+        "tell me what's wrong with my code",
+        "tell me what is wrong with my code",
+        "debug my code",
+        "review my code",
+        "fix my code",
+    ]):
+        return code_review_action(update_callbacks, groq_client=groq_client)
 
     shutdown_check = should_shutdown(prompt)
     goodbye_check = should_goodbye(prompt)
@@ -46,10 +56,12 @@ def run_action(prompt, update_callbacks=None, groq_client=None, db_path=None):
     if "wake" in lower or "wake up" in lower:
         return wake_action(update_callbacks)
 
-    if "what time" in lower or "current time" in lower or "tell me the time" in lower or "time is it" in lower:
+    # Time queries - allow words between keywords
+    if any(phrase in lower for phrase in ["what time", "current time", "tell me the time", "time is it"]) or (("what" in lower or "current" in lower) and "time" in lower) or (("tell" in lower or "time" in lower) and ("me" in lower or "is" in lower or "now" in lower)):
         return time_action(update_callbacks)
 
-    if "what day" in lower or "what date" in lower or "current date" in lower or "date is it" in lower:
+    # Date queries - allow words between keywords  
+    if any(phrase in lower for phrase in ["what day", "what date", "current date", "date is it"]) or (("what" in lower or "current" in lower) and "date" in lower) or ("today" in lower and "date" in lower):
         return date_action(update_callbacks)
 
     if "show my memory" in lower or "what do you remember" in lower:
@@ -72,6 +84,29 @@ def run_action(prompt, update_callbacks=None, groq_client=None, db_path=None):
 
     if "github" in lower and "browser" in lower:
         return open_browser_action(update_callbacks, target_prompt=prompt)
+
+    if (
+        "google maps" in lower
+        or "google map" in lower
+        or "maps" in lower
+        or re.search(r"\b(?:any\s+)?directions?\s+to\b", lower)
+        or any(phrase in lower for phrase in ["route to", "navigate to", "how do i get to"])
+    ):
+        return google_maps_action(prompt, update_callbacks)
+
+    if any(
+        phrase in lower
+        for phrase in [
+            "what can you do",
+            "what are you capable of",
+            "show me what you can do",
+            "give me a showcase",
+        ]
+    ):
+        return capabilities_action(update_callbacks)
+
+    if any(phrase in lower for phrase in ["write code", "create code", "generate code", "write a script", "create a script"]):
+        return write_code_action(prompt, update_callbacks, groq_client=groq_client)
 
     if "take screenshot" in lower or "screenshot" in lower:
         return take_screenshot_action(update_callbacks)
@@ -255,6 +290,134 @@ def open_website_action(prompt, update_callbacks=None):
         message = f"Opening {target}."
     except Exception:
         message = "I could not open that website."
+    _record_last_response(message)
+    if update_callbacks:
+        update_callbacks["response"](message)
+        update_callbacks["processing"](False)
+        update_callbacks["skip_audio"](False)
+    return message
+
+
+def google_maps_action(prompt, update_callbacks=None):
+    """Open Google Maps, search for a place, or show directions."""
+    lower = (prompt or "").lower().strip()
+    directions_requested = any(
+        [
+            re.search(r"\b(?:any\s+)?directions?\s+to\b", lower),
+            *[phrase in lower for phrase in ["route to", "navigate to", "how do i get to"]],
+        ]
+    )
+    query = re.sub(
+        r"(?i)\b(jarvis|javis|chavis|i need|open|launch|go to|show me|search for|find|look up|google maps?|maps|any directions? to|directions? to|route to|navigate to|how do i get to)\b",
+        " ",
+        prompt or "",
+    )
+    query = re.sub(r"\s+", " ", query).strip(" .,:;!?\"")
+
+    if directions_requested and query:
+        url = f"https://www.google.com/maps/dir/?api=1&destination={quote_plus(query)}"
+        message = f"Opening directions to {query}."
+    elif query:
+        url = f"https://www.google.com/maps/search/?api=1&query={quote_plus(query)}"
+        message = f"Searching Google Maps for: {query}."
+    else:
+        url = "https://www.google.com/maps"
+        message = "Opening Google Maps."
+
+    try:
+        webbrowser.open(url)
+    except Exception:
+        message = "I could not open Google Maps."
+    _record_last_response(message)
+    if update_callbacks:
+        update_callbacks["response"](message)
+        update_callbacks["processing"](False)
+        update_callbacks["skip_audio"](False)
+    return message
+
+
+def capabilities_action(update_callbacks=None):
+    """Give a short spoken tour of the assistant's main capabilities."""
+    message = (
+        "I can take voice requests, open Google Maps and get directions, read and review the code on your screen, "
+        "open apps and websites, manage notes and reminders, remember useful details, analyze screenshots, and help "
+        "you write or troubleshoot code."
+    )
+    _record_last_response(message)
+    if update_callbacks:
+        update_callbacks["response"](message)
+        update_callbacks["processing"](False)
+        update_callbacks["skip_audio"](False)
+    return message
+
+
+def code_review_action(update_callbacks=None, groq_client=None):
+    """Analyze the visible code and return a concise diagnosis with a suggested fix."""
+    if not groq_client:
+        message = "I need the Groq API configured before I can read and review the code on your screen."
+    else:
+        try:
+            from modules.vision import describe_screen_for_task
+
+            if update_callbacks:
+                update_callbacks["status"]("JARVIS reading the code on screen...")
+            analysis = describe_screen_for_task(
+                groq_client,
+                "Inspect the visible code. Identify the most important error or bug, explain why it happens, and provide the smallest corrected code snippet. Do not claim to have changed files; clearly label the proposed fix.",
+            )
+            message = f"Code review: {analysis}"
+        except Exception as error:
+            print(f"[ACTIONS] Code review error: {error}")
+            message = "I could not read the code on screen. Please make sure the code window is visible and try again."
+
+    _record_last_response(message)
+    if update_callbacks:
+        update_callbacks["response"](message)
+        update_callbacks["processing"](False)
+        update_callbacks["skip_audio"](False)
+    return message
+
+
+def write_code_action(prompt, update_callbacks=None, groq_client=None):
+    """Generate simple code and save it under the project-local generated folder."""
+    if not groq_client:
+        message = "I cannot write code until the Groq API is configured."
+    else:
+        task = re.sub(
+            r"(?i)\b(write|create|generate)\s+(a\s+)?(simple\s+)?(piece\s+of\s+)?(code|script)\b",
+            " ",
+            prompt or "",
+        )
+        task = re.sub(r"\s+", " ", task).strip(" .,:;!?\"")
+        if not task:
+            message = "Tell me what code you want me to write."
+        else:
+            try:
+                language = "python" if "python" in task.lower() else "javascript" if "javascript" in task.lower() or "node" in task.lower() else "text"
+                extension = {"python": ".py", "javascript": ".js", "text": ".txt"}[language]
+                response = groq_client.chat.completions.create(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "Generate only the complete source code requested by the user. Do not include explanations outside a markdown code fence.",
+                        },
+                        {"role": "user", "content": task},
+                    ],
+                    model=GROQ_MODEL,
+                    max_tokens=1200,
+                )
+                generated = response.choices[0].message.content.strip()
+                code_match = re.search(r"```(?:[a-zA-Z0-9_+-]+)?\s*\n?(.*?)```", generated, re.DOTALL)
+                code = (code_match.group(1) if code_match else generated).strip() + "\n"
+                output_dir = Path(__file__).resolve().parent.parent / "generated"
+                output_dir.mkdir(exist_ok=True)
+                output_path = output_dir / f"jarvis_generated{extension}"
+                output_path.write_text(code, encoding="utf-8")
+                message = f"Saved: {output_path.relative_to(output_dir.parent)}. I did not run the generated code."
+            except Exception as error:
+                print(f"[ACTIONS] Code generation error: {error}")
+                message = "I could not generate and save that code."
+
     _record_last_response(message)
     if update_callbacks:
         update_callbacks["response"](message)

@@ -225,6 +225,7 @@ def should_wake(prompt):
     """
     Determines if the user is trying to wake up JARVIS.
     Avoid false positives from other names or generic greetings.
+    Also matches common transcription variations like 'Javis'.
     """
     prompt_lower = _normalize_prompt(prompt)
     if "nadia" in prompt_lower:
@@ -233,7 +234,8 @@ def should_wake(prompt):
     if not prompt_lower:
         return False
 
-    if "jarvis" not in prompt_lower:
+    # Match "jarvis" or common transcription errors like "javis"
+    if not ("jarvis" in prompt_lower or "javis" in prompt_lower or "jarv" in prompt_lower):
         return False
 
     wake_phrases = [
@@ -242,10 +244,12 @@ def should_wake(prompt):
         "good morning jarvis", "good afternoon jarvis", "good evening jarvis",
         "are you there jarvis", "jarvis are you there", "you there jarvis",
         "jarvis hello", "jarvis hey", "jarvis hi",
+        "hello javis", "hey javis", "hi javis",  # Transcription variations
+        "jarvis", "javis",  # Just the name
     ]
 
     return _matches_any(prompt_lower, wake_phrases) or (
-        ("wake up" in prompt_lower or "are you there" in prompt_lower or "you there" in prompt_lower) and "jarvis" in prompt_lower
+        ("wake up" in prompt_lower or "are you there" in prompt_lower or "you there" in prompt_lower) and ("jarvis" in prompt_lower or "javis" in prompt_lower)
     )
 
 

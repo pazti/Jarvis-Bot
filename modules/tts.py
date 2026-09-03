@@ -1,6 +1,7 @@
 # --- TTS.PY ---
 # Text-to-Speech logic (pyttsx3 engine)
 
+import os
 import threading
 import pyttsx3
 
@@ -91,10 +92,12 @@ def speak(text):
                 engine = pyttsx3.init()
                 profile = get_voice_profile_for_text(message)
                 engine.setProperty("rate", profile["rate"])
-                try:
-                    engine.setProperty("pitch", profile["pitch"])
-                except Exception:
-                    print("[TTS] Pitch adjustment unsupported on this engine; using default pitch.")
+                # SAPI5 does not support pitch and emits a warning when it is set.
+                if os.name != "nt":
+                    try:
+                        engine.setProperty("pitch", profile["pitch"])
+                    except Exception:
+                        print("[TTS] Pitch adjustment unsupported on this engine; using default pitch.")
                 engine.setProperty("volume", profile["volume"])
 
                 selected_voice = _select_female_voice(engine)

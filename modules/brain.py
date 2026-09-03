@@ -5,7 +5,7 @@ import os
 import tempfile
 import wave
 from groq import Groq
-from modules.config import GROQ_API_KEY, SYSTEM_PROMPT, SAMPLE_RATE, MEMORY_DB_PATH
+from modules.config import GROQ_API_KEY, GROQ_MODEL, SYSTEM_PROMPT, SAMPLE_RATE, MEMORY_DB_PATH
 from modules.tts import speak
 from modules.vision import describe_screen_for_task, should_shutdown, should_wake
 from modules.memory import (
@@ -76,15 +76,18 @@ def ask_groq(prompt, update_callbacks):
     try:
         action_result = run_action(prompt, update_callbacks, groq_client=client, db_path=MEMORY_DB_PATH)
         if action_result is not None:
+            print(f"[BRAIN] Action returned: {type(action_result).__name__} - {str(action_result)[:80]}")
             if action_result in {"SHUTDOWN", "SLEEP", "WAKE", "SLEEP_WITH_SUMMARY"}:
                 return action_result
             if isinstance(action_result, str):
-                if "Memory saved" in action_result or "I cleared" in action_result or "Memory cleared" in action_result or "Opening" in action_result or "Screenshot" in action_result or "Launching" in action_result or "Saved:" in action_result or "what we discussed" in action_result:
-                    try:
-                        speak(action_result)
-                    except Exception as e:
-                        print(f"[BRAIN] speak() error: {e}")
-                    return action_result
+                # Always speak action results to the user
+                print(f"[BRAIN] Speaking action result...")
+                try:
+                    speak(action_result)
+                except Exception as e:
+                    print(f"[BRAIN] speak() error: {e}")
+                print(f"[BRAIN] Action result processed")
+                return action_result
             return action_result
 
         # Check if user is asking to analyze the screen
@@ -95,53 +98,6 @@ def ask_groq(prompt, update_callbacks):
             screen_analysis = describe_screen_for_task(client, prompt)
             print(f"[BRAIN] Screen analysis complete")
 
-        memory_action = None
-        lower_prompt = prompt.lower()
-
-        if "show my memory" in lower_prompt or "what do you remember" in lower_prompt:
-            category = "general"
-            if "work" in lower_prompt:
-                category = "work"
-            elif "personal" in lower_prompt:
-                category = "personal"
-            elif "developer" in lower_prompt or "coding" in lower_prompt or "programming" in lower_prompt:
-                category = "developer_preferences"
-
-            memory_summary = get_memory_summary(db_path=MEMORY_DB_PATH, category=category)
-            update_callbacks["response"](memory_summary)
-            try:
-                speak(memory_summary)
-            except Exception as e:
-                print(f"[BRAIN] speak() error: {e}")
-            update_callbacks["processing"](False)
-            update_callbacks["skip_audio"](False)
-            return
-
-        if "remember this" in lower_prompt or "remember that" in lower_prompt:
-            memory_action = remember_from_prompt(prompt, db_path=MEMORY_DB_PATH)
-        elif "forget that" in lower_prompt or "forget" in lower_prompt:
-            memory_action = forget_memory(prompt, db_path=MEMORY_DB_PATH)
-
-        if memory_action is not None and isinstance(memory_action, str):
-            update_callbacks["response"](f"Memory saved: {memory_action}")
-            try:
-                speak(f"Memory saved: {memory_action}")
-            except Exception as e:
-                print(f"[BRAIN] speak() error: {e}")
-            update_callbacks["processing"](False)
-            update_callbacks["skip_audio"](False)
-            return
-
-        if memory_action is False:
-            update_callbacks["response"]("I cleared the matching memory entry.")
-            try:
-                speak("I cleared the matching memory entry.")
-            except Exception as e:
-                print(f"[BRAIN] speak() error: {e}")
-            update_callbacks["processing"](False)
-            update_callbacks["skip_audio"](False)
-            return
-        
         update_callbacks["status"]("JARVIS is thinking...")
         print(f"[BRAIN] Calling Groq API...")
 
@@ -160,7 +116,7 @@ def ask_groq(prompt, update_callbacks):
                 {"role": "system", "content": SYSTEM_PROMPT + memory_prefix},
                 {"role": "user", "content": user_message},
             ],
-            model="llama-3.3-70b-versatile",
+            model=GROQ_MODEL,
         )
 
         response = chat_completion.choices[0].message.content.strip()

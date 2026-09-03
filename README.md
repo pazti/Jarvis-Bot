@@ -93,6 +93,10 @@ The desktop HUD will appear. Start speaking to JARVIS!
 - **"Open YouTube"** → Open YouTube in browser
 - **"Open GitHub"** → Open GitHub in browser
 - **"Search the web for [query]"** → Google search for query
+- **"Open Google Maps"** → Launch Google Maps
+- **"Find [place] on Maps"** → Search Google Maps for a place
+- **"Directions to [place]"** → Open Google Maps directions
+- **"JARVIS, I need directions to [place]"** → Open a Google Maps route and report the destination
 
 ### Files & Applications
 - **"Take a screenshot"** → Capture and save screen as PNG
@@ -121,6 +125,16 @@ The desktop HUD will appear. Start speaking to JARVIS!
 ### Notes & Drafts
 - **"Create a quick note: [text]"** → Save quick note to memory
 - **"Draft a message: [content]"** → Draft text for later use
+
+### Code Writing
+- **"Write code to [task]"** → Generate simple code and save it under `generated/`
+- **"Create a Python script that [task]"** → Save a Python script under `generated/`
+- **"Open my code and tell me what's wrong"** → Read the visible code with vision and explain the likely fix
+
+### Capabilities Showcase
+- **"What can you do?"** → Rapidly summarize voice, Maps, vision, coding, memory, web, and productivity capabilities
+
+Generated code is saved for review and is never executed automatically.
 
 ### Clipboard
 - **"Read my clipboard"** → Read and speak clipboard contents

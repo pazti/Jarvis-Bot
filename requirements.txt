@@ -2,7 +2,7 @@ python-dotenv
 groq
 requests
 numpy
-pygame
+pygame-ce
 pyttsx3
 sounddevice
 Pillow
