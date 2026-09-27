@@ -6,3 +6,4 @@ pygame-ce
 pyttsx3
 sounddevice
 Pillow
+playwright

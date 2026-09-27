@@ -1,12 +1,20 @@
 # --- AUDIO.PY ---
 # Microphone stream & Voice Activity Detection (VAD)
 
+import os
 import queue
 import threading
 import time
 import numpy as np
 import sounddevice as sd
-from modules.config import SAMPLE_RATE, CHUNK, SILENCE_THRESHOLD, SILENCE_FRAMES
+from modules.config import (
+    SAMPLE_RATE,
+    CHUNK,
+    SILENCE_THRESHOLD,
+    SILENCE_FRAMES,
+    AUDIO_INPUT_DEVICE,
+    AUDIO_INPUT_DEVICE_NAME,
+)
 from modules.brain import transcribe_audio
 from modules.tts import is_speaking
 
@@ -138,15 +146,53 @@ def speech_worker():
                 ).start()
 
 
+def _resolve_input_device():
+    """Pick the most likely microphone device for this machine."""
+    try:
+        devices = sd.query_devices()
+    except Exception as exc:
+        print(f"[AUDIO] Could not list devices: {exc}")
+        return None
+
+    requested = (AUDIO_INPUT_DEVICE or "").strip()
+    if requested:
+        try:
+            return int(requested)
+        except ValueError:
+            pass
+
+    preferred_name = (AUDIO_INPUT_DEVICE_NAME or "").strip().lower()
+    if preferred_name:
+        for idx, device in enumerate(devices):
+            name = device[0] if isinstance(device, (list, tuple)) else str(device.get("name", ""))
+            if preferred_name in str(name).lower():
+                return idx
+
+    for idx, device in enumerate(devices):
+        name = device[0] if isinstance(device, (list, tuple)) else str(device.get("name", ""))
+        lowered = str(name).lower()
+        if any(keyword in lowered for keyword in ["microphone", "mic", "array", "headset", "usb"]):
+            return idx
+
+    default = getattr(sd.default, "device", None)
+    if isinstance(default, (list, tuple)) and default:
+        return default[0]
+    return None
+
+
 def start_audio_stream():
     """Initialize and start the audio input stream."""
     threading.Thread(target=speech_worker, daemon=True).start()
+
+    device_index = _resolve_input_device()
+    print(f"[AUDIO] Using input device index: {device_index}")
 
     stream = sd.InputStream(
         samplerate=SAMPLE_RATE,
         channels=1,
         dtype="float32",
         blocksize=CHUNK,
+        device=device_index,
         callback=audio_callback,
     )
     stream.start()
@@ -161,14 +207,14 @@ def get_current_volume():
 def set_skip_audio(value):
     """Manually control audio skip flag."""
     global skip_audio
-    print(f"[AUDIO] Setting skip_audio={value}")
+    # Removed print statement to reduce terminal noise
     skip_audio = value
 
 
 def set_processing(value):
     """Manually control processing flag."""
     global is_processing
-    print(f"[AUDIO] Setting is_processing={value}")
+    # Removed print statement to reduce terminal noise
     is_processing = value
 
 
@@ -185,7 +231,7 @@ def get_state():
 def set_sleeping(value):
     """Manually control sleep flag."""
     global is_sleeping
-    print(f"[AUDIO] Setting is_sleeping={value}")
+    # Removed print statement to reduce terminal noise
     is_sleeping = value
 
 

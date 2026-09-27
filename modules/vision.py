@@ -214,11 +214,21 @@ def should_shutdown(prompt):
     if "nadia" in prompt_lower:
         return False
 
+    explicit_patterns = [
+        r"\b(?:shutdown|shut down|power off|turn off)\s+(?:jarvis|javis)\b",
+        r"\b(?:shutdown|shut down|power off|turn off)\s+(?:the\s+)?assistant\b",
+        r"\b(?:shutdown|shut down|power off|turn off)\s+now\b",
+        r"\b(?:exit|quit|close|terminate|end session|complete shutdown)\b",
+    ]
+
+    if any(re.search(pattern, prompt_lower) for pattern in explicit_patterns):
+        return True
+
     keywords = [
         "shutdown", "shut down", "power off", "turn off", "exit app",
         "quit app", "close app", "terminate", "end session", "complete shutdown"
     ]
-    return _matches_any(prompt_lower, keywords)
+    return _matches_any(prompt_lower, keywords) and any(token in prompt_lower for token in ["jarvis", "javis", "assistant"])
 
 
 def should_wake(prompt):

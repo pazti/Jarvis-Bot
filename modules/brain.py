@@ -126,7 +126,7 @@ def ask_groq(prompt, update_callbacks):
         update_callbacks["status"]("JARVIS speaking...")
         update_callbacks["response"](response)
 
-        print(f"\n[JARVIS]: {response}\n")
+        print(f"\n[JARVIS]: {response.encode('utf-8', errors='replace').decode('utf-8')}\n")
         print(f"[BRAIN] Calling speak()...")
         try:
             speak(response)

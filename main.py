@@ -2,6 +2,7 @@
 # Simple entry point (runs the UI & orchestrates threads)
 
 import sys
+import pygame
 from modules import hud, audio, config
 
 
@@ -29,10 +30,32 @@ def main():
     running = True
     try:
         while running:
-            # Check for quit event
-            if hud.check_quit_event():
-                running = False
-                continue
+            # Process events
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                    break
+                
+                # Handle HUD interactions (Mute, Text Input)
+                text_request = hud.handle_event(event)
+                if text_request:
+                    print(f"[UI] Text request received: {text_request}")
+                    from modules.brain import ask_groq
+                    import threading
+                    
+                    callbacks = {
+                        "status": hud.update_status,
+                        "user_text": hud.update_user_text,
+                        "response": hud.update_response_text,
+                        "processing": audio.set_processing,
+                        "skip_audio": audio.set_skip_audio,
+                        "set_sleeping": audio.set_sleeping,
+                    }
+                    hud.update_user_text(f"Paul (Text): {text_request}")
+                    threading.Thread(target=ask_groq, args=(text_request, callbacks), daemon=True).start()
+
+            # Synchronize Mute State
+            audio.set_skip_audio(hud.is_muted)
 
             # Get current volume and render frame
             current_volume = audio.get_current_volume()
