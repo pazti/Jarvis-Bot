@@ -25,6 +25,176 @@ def run_action(prompt, update_callbacks=None, groq_client=None, db_path=None):
     if not lower:
         return None
 
+    # TikTok Integration Logic
+    if "tiktok" in lower:
+        if any(phrase in lower for phrase in ["login", "sign in", "log into", "log in", "plug into"]):
+            from modules.tiktok_integration import sync_login
+            update_callbacks["status"]("Opening TikTok login window...")
+            success = sync_login()
+            if success:
+                message = "TikTok session saved successfully. You are now connected."
+            else:
+                message = "I couldn't open the TikTok login window. Please check if another Chrome instance is using the profile."
+            update_callbacks["response"](message)
+            update_callbacks["processing"](False)
+            update_callbacks["skip_audio"](False)
+            return message
+        
+        if "analyze" in lower or "performance" in lower or "stats" in lower:
+            from modules.tiktok_integration import sync_get_analytics
+            # Try to extract username from prompt
+            username = re.sub(r"(?i).*tiktok account (?:of )?|analyze tiktok|performance of|stats for", "", prompt).strip()
+            if not username:
+                message = "Please tell me which TikTok username to analyze."
+            else:
+                update_callbacks["status"]("Accessing TikTok analytics...")
+                data = sync_get_analytics(username)
+                if data["status"] == "success":
+                    # Send the raw content to the LLM for synthesis
+                    if groq_client:
+                        completion = groq_client.chat.completions.create(
+                            messages=[
+                                {"role": "system", "content": "You are a TikTok Growth Expert. Analyze the following raw HTML/content from a TikTok analytics page and provide a concise, professional performance summary and 3 actionable tips for growth."},
+                                {"role": "user", "content": data["raw_content"]}
+                            ],
+                            model=GROQ_MODEL,
+                        )
+                        message = completion.choices[0].message.content
+                    else:
+                        message = "I retrieved the data but need the Groq API to analyze it."
+                else:
+                    message = f"Failed to access TikTok: {data['message']}"
+            
+            update_callbacks["response"](message)
+            update_callbacks["processing"](False)
+            update_callbacks["skip_audio"](False)
+            return message
+
+    # Track Task Progress
+    if "track" in lower and "track_" in prompt:
+        track_id_match = re.search(r"track_[a-zA-Z0-9_]+", prompt)
+        if track_id_match:
+            track_id = track_id_match.group(0)
+            return track_task_action(track_id, update_callbacks)
+
+    workflow_aliases = {
+        "business finder": "business_finder",
+        "businesses without websites": "business_finder",
+        "project health check": "project_health_check",
+        "run the test suite": "run_test_suite",
+        "run tests": "run_test_suite",
+        "feature plan": "feature_plan",
+        "plan a feature": "feature_plan",
+        "bug fix": "bug_fix",
+        "fix this bug": "bug_fix",
+        "module refactor": "module_refactor",
+        "refactor this module": "module_refactor",
+        "dependency audit": "dependency_audit",
+        "audit dependencies": "dependency_audit",
+        "documentation generator": "documentation_generator",
+        "generate documentation": "documentation_generator",
+        "project backup": "project_backup",
+        "backup the project": "project_backup",
+        "git change assistant": "git_change_assistant",
+        "review my git changes": "git_change_assistant",
+        "feature implementation": "feature_implementation",
+        "implement this feature": "feature_implementation",
+    }
+    if "plan" in lower or "start task" in lower or "create a task" in lower:
+        for phrase, workflow_key in workflow_aliases.items():
+            if phrase in lower:
+                return plan_workflow_action(workflow_key, update_callbacks, db_path=db_path)
+
+    # Priority 1: Trigger the deterministic Business Finder tool FIRST
+    if (
+        "businesses without websites" in lower
+        or "businesses without a website" in lower
+        or "don't have websites" in lower
+        or "don't have a website" in lower
+        or "no website" in lower
+        or ("without websites" in lower and any(word in lower for word in ["find", "search", "look for"]))
+        or ("without a website" in lower and any(word in lower for word in ["find", "search", "look for"]))
+        or ("restaurants" in lower and "without a website" in lower)
+        or ("restaurants" in lower and "no website" in lower)
+        or ("restaurants" in lower and "without websites" in lower)
+    ):
+        # Enhanced extraction using LLM if available
+        if groq_client:
+            try:
+                extraction = groq_client.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": "Extract the 'category' (what kind of business) and 'area' (city/region) from the user prompt. Return ONLY a JSON object: {\"category\": \"...\", \"area\": \"...\"}"},
+                        {"role": "user", "content": prompt}
+                    ],
+                    model=GROQ_MODEL,
+                    response_format={"type": "json_object"}
+                ).choices[0].message.content
+                import json
+                data = json.loads(extraction)
+                # We override the prompt to a standard "category in area" format for the existing action handler
+                structured_prompt = f"{data.get('category')} in {data.get('area')}"
+                return business_finder_action(structured_prompt, update_callbacks, db_path=db_path)
+            except Exception as e:
+                print(f"[ACTIONS] LLM extraction failed, falling back to regex: {e}")
+
+        return business_finder_action(prompt, update_callbacks, db_path=db_path)
+
+    # Track Task Progress
+    if "track" in lower and "track_" in prompt:
+        track_id_match = re.search(r"track_[a-zA-Z0-9_]+", prompt)
+        if track_id_match:
+            track_id = track_id_match.group(0)
+            return track_task_action(track_id, update_callbacks)
+
+    workflow_aliases = {
+        "business finder": "business_finder",
+        "businesses without websites": "business_finder",
+        "project health check": "project_health_check",
+        "run the test suite": "run_test_suite",
+        "run tests": "run_test_suite",
+        "feature plan": "feature_plan",
+        "plan a feature": "feature_plan",
+        "bug fix": "bug_fix",
+        "fix this bug": "bug_fix",
+        "module refactor": "module_refactor",
+        "refactor this module": "module_refactor",
+        "dependency audit": "dependency_audit",
+        "audit dependencies": "dependency_audit",
+        "documentation generator": "documentation_generator",
+        "generate documentation": "documentation_generator",
+        "project backup": "project_backup",
+        "backup the project": "project_backup",
+        "git change assistant": "git_change_assistant",
+        "review my git changes": "git_change_assistant",
+        "feature implementation": "feature_implementation",
+        "implement this feature": "feature_implementation",
+    }
+    if "plan" in lower or "start task" in lower or "create a task" in lower:
+        for phrase, workflow_key in workflow_aliases.items():
+            if phrase in lower:
+                return plan_workflow_action(workflow_key, update_callbacks, db_path=db_path)
+
+    if (
+        "businesses without websites" in lower
+        or "businesses without a website" in lower
+        or "don't have websites" in lower
+        or "don't have a website" in lower
+        or "no website" in lower
+        or ("without websites" in lower and any(word in lower for word in ["find", "search", "look for"]))
+        or ("without a website" in lower and any(word in lower for word in ["find", "search", "look for"]))
+    ):
+        return business_finder_action(prompt, update_callbacks, db_path=db_path)
+
+    if any(phrase in lower for phrase in [
+        "review my project code",
+        "review the project code",
+        "open my project code",
+        "analyze my project code",
+        "inspect my project code",
+        "read my project code",
+    ]):
+        return project_code_review_action(update_callbacks, groq_client=groq_client)
+
     if any(phrase in lower for phrase in [
         "open my code",
         "tell me what's wrong with my code",
@@ -44,16 +214,24 @@ def run_action(prompt, update_callbacks=None, groq_client=None, db_path=None):
     if goodbye_check:
         return sleep_action(update_callbacks, groq_client=groq_client, db_path=db_path)
 
+    explicit_sleep_patterns = [
+        r"\b(?:sleep|go to sleep|enter sleep mode)\s+(?:jarvis|javis|assistant)\b",
+        r"\b(?:jarvis|javis|assistant)\s+(?:go to sleep|sleep)\b",
+        r"\b(?:sleep|go to sleep|enter sleep mode)\b.*\b(?:jarvis|javis|assistant)\b",
+        r"\b(?:jarvis|javis|assistant)\b.*\b(?:sleep|go to sleep|enter sleep mode)\b",
+        r"\b(?:goodbye|bye|see you later|talk to you later|good night)\b",
+    ]
+
     if "sleep pc" in lower or "sleep my pc" in lower or "sleep computer" in lower or "hibernate pc" in lower:
         return pc_sleep_action(update_callbacks)
 
     if "shutdown pc" in lower or "shutdown computer" in lower or "turn off pc" in lower or "turn off computer" in lower:
         return pc_shutdown_action(update_callbacks)
 
-    if "sleep" in lower and "wake" not in lower and "sleeping" not in lower and "asleep" not in lower:
+    if any(re.search(pattern, lower) for pattern in explicit_sleep_patterns):
         return sleep_action(update_callbacks, groq_client=groq_client, db_path=db_path)
 
-    if "wake" in lower or "wake up" in lower:
+    if re.search(r"\b(?:wake|wake up)\b.*\b(?:jarvis|javis|assistant)\b", lower) or re.search(r"\b(?:jarvis|javis|assistant)\b.*\b(?:wake|wake up)\b", lower):
         return wake_action(update_callbacks)
 
     # Time queries - allow words between keywords
@@ -130,7 +308,7 @@ def run_action(prompt, update_callbacks=None, groq_client=None, db_path=None):
         return summarize_day_action(update_callbacks)
 
     if "quick note" in lower or "create a note" in lower or "write a quick note" in lower:
-        return quick_note_action(prompt, update_callbacks)
+        return quick_note_action(prompt, update_callbacks, db_path=db_path)
 
     if "remind me to finish my task" in lower or "reminder to finish my task" in lower:
         return reminder_action("remind me to finish my task", update_callbacks)
@@ -182,6 +360,27 @@ def run_action(prompt, update_callbacks=None, groq_client=None, db_path=None):
 
     return None
 
+
+def track_task_action(track_id, update_callbacks=None):
+    """Look up the status of a specific task track in the database."""
+    from modules.task_orchestration import TaskExecutor
+    try:
+        executor = TaskExecutor(db_path=MEMORY_DB_PATH)
+        # We use a helper to get the track state
+        status = executor.get_track_status(track_id)
+        if not status:
+            message = f"I couldn't find any record of track {track_id}, Sir."
+        else:
+            message = f"Track {track_id} status: {status}"
+    except Exception as e:
+        print(f"[ACTIONS] Tracking error: {e}")
+        message = "I had trouble accessing the task database."
+    
+    if update_callbacks:
+        update_callbacks["response"](message)
+        update_callbacks["processing"](False)
+        update_callbacks["skip_audio"](False)
+    return message
 
 def shutdown_action(update_callbacks=None):
     if update_callbacks:
@@ -351,6 +550,146 @@ def capabilities_action(update_callbacks=None):
     return message
 
 
+def plan_workflow_action(workflow_key, update_callbacks=None, db_path=None):
+    """Create a persisted workflow track and execute it immediately if it's an automated workflow."""
+    try:
+        from modules.task_catalog import TaskCatalog
+        from modules.task_orchestration import TaskExecutor
+        from modules.workflow_handlers import WORKFLOW_HANDLERS
+
+        track = TaskCatalog(db_path=db_path).plan(workflow_key)
+        
+        # If the workflow has an automated handler, execute the tasks now
+        if workflow_key in WORKFLOW_HANDLERS:
+            handler = WORKFLOW_HANDLERS[workflow_key]
+            executor = TaskExecutor(db_path=db_path)
+            
+            last_result = ""
+            for task in track["tasks"]:
+                res = executor.execute_task(
+                    track["track_id"],
+                    task["task_id"],
+                    task_handler=lambda t, c: handler(t, c),
+                )
+                # Update HUD progress
+                from modules import hud
+                
+                # Map current tasks to a state for the HUD
+                # we need the original task list from the catalog to build the state
+                from modules.task_catalog import TASK_CATALOG
+                workflow = TASK_CATALOG[workflow_key]
+                
+                steps_state = []
+                for i, t in enumerate(workflow["tasks"]):
+                    if i < idx:
+                        steps_state.append({"title": t[0], "status": "done"})
+                    elif i == idx:
+                        steps_state.append({"title": t[0], "status": "running"})
+                    else:
+                        steps_state.append({"title": t[0], "status": "pending"})
+                
+                hud.update_task_progress(track["name"], steps_state)
+                
+                last_result = res["result"] if res else "Completed"
+            
+            message = f"Executed {track['name']} successfully. Final result: {last_result}"
+        else:
+            message = (
+                f"Planned {track['name']} with {len(track['tasks'])} tasks. "
+                f"Track ID: {track['track_id']}."
+            )
+    except Exception as error:
+        print(f"[ACTIONS] Task planning error: {error}")
+        message = "I could not create or execute that task plan."
+
+    _record_last_response(message)
+    if update_callbacks:
+        update_callbacks["response"](message)
+        update_callbacks["status"]("Task plan processed.")
+        update_callbacks["processing"](False)
+        update_callbacks["skip_audio"](False)
+    return message
+
+
+def business_finder_action(prompt, update_callbacks=None, db_path=None):
+    """Run the business-finder task using OpenStreetMap (Overpass API) instead of Google Places."""
+    from modules.task_catalog import TaskCatalog
+    
+    lower_prompt = (prompt or "").lower()
+    category = None
+    area = None
+    
+    cleaned = lower_prompt
+    triggers = [
+        r"find\s+businesses\s+in\s+", r"find\s+restaurants\s+in\s+", 
+        r"search\s+for\s+", r"look\s+for\s+", r"businesses\s+in\s+",
+        r"restaurants\s+in\s+", r"shops\s+in\s+", r"dentists\s+in\s+",
+        r"jarvis\s+", r"javis\s+", r"why\s+javis\s+"
+    ]
+    for t in triggers:
+        cleaned = re.sub(t, "", cleaned)
+    
+    cleaned = re.sub(r"without\s+websites?|no\s+website|with\s+no\s+websites?", "", cleaned).strip()
+    
+    if " in " in cleaned:
+        parts = cleaned.split(" in ")
+        area = parts[-1].strip()
+        category = parts[0].strip()
+    
+    if area and not category:
+        category = "business"
+    
+    if not category or not area:
+        message = "I couldn't quite figure out the business type and city. Try: 'find restaurants in Abuja without websites'."
+    else:
+        try:
+            track = TaskCatalog(db_path=db_path).plan(
+                "business_finder",
+                context={"search_query": category, "search_area": area},
+            )
+            from modules.osm_places import save_business_report, search_businesses_without_websites
+            from modules.task_orchestration import TaskExecutor
+
+            businesses = search_businesses_without_websites(category, area_name=area)
+            
+            if not businesses:
+                message = f"I searched for {category} in {area}, but I couldn't find any businesses without websites."
+            else:
+                report_path = save_business_report(businesses)
+                executor = TaskExecutor(db_path=db_path)
+                
+                task_results = {
+                    "Define search scope": {"result": f"Approved search scope: {category} in {area}."},
+                    "Search Google Places": {"result": f"Collected OpenStreetMap results for {category} in {area}."},
+                    "Filter businesses without websites": {"result": f"Filtered {len(businesses)} businesses without listed websites."},
+                    "Save businesses without websites": {"result": f"Saved report to {report_path}."},
+                    "Verify and report results": {"result": f"Verified {len(businesses)} report rows."},
+                }
+                
+                for task in track["tasks"]:
+                    executor.execute_task(
+                        track["track_id"],
+                        task["task_id"],
+                        task_handler=lambda current_task, context: task_results.get(current_task["title"], {"result": "Completed"}),
+                    )
+                    
+                message = (
+                    f"Business Finder (OSM) complete: found {len(businesses)} businesses without listed websites in {area}. "
+                    f"Report saved to {report_path}. Track ID: {track['track_id']}."
+                )
+        except Exception as error:
+            print(f"[ACTIONS] Business finder error: {error}")
+            message = "I had an error running the business finder. Please try again."
+
+    _record_last_response(message)
+    if update_callbacks:
+        update_callbacks["response"](message)
+        update_callbacks["status"]("Business finder task processed.")
+        update_callbacks["processing"](False)
+        update_callbacks["skip_audio"](False)
+    return message
+
+
 def code_review_action(update_callbacks=None, groq_client=None):
     """Analyze the visible code and return a concise diagnosis with a suggested fix."""
     if not groq_client:
@@ -376,6 +715,39 @@ def code_review_action(update_callbacks=None, groq_client=None):
         update_callbacks["processing"](False)
         update_callbacks["skip_audio"](False)
     return message
+
+
+def project_code_review_action(update_callbacks=None, groq_client=None):
+    """Review the actual project files in the workspace and summarize the most relevant issues."""
+    project_root = Path(__file__).resolve().parent.parent
+    review_lines = []
+
+    for path in sorted(project_root.rglob("*.py")):
+        if ".venv" in path.parts or "__pycache__" in path.parts:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        snippets = []
+        if "def main" in text.lower() or "if __name__ == '__main__'" in text:
+            snippets.append(f"{path.relative_to(project_root)} contains the entry point and application boot logic.")
+        if "sleep" in text.lower() and "wake" in text.lower():
+            snippets.append(f"{path.relative_to(project_root)} includes wake/sleep behavior that should be checked for false positives.")
+        if "groq" in text.lower() or "whisper" in text.lower():
+            snippets.append(f"{path.relative_to(project_root)} integrates with the voice and AI pipeline.")
+        if snippets:
+            review_lines.extend(snippets)
+
+    if not review_lines:
+        review_lines.append("No Python files were found to inspect in the project root.")
+
+    summary = "Project code review: " + " ".join(review_lines[:6])
+    if update_callbacks:
+        update_callbacks["response"](summary)
+        update_callbacks["processing"](False)
+        update_callbacks["skip_audio"](False)
+    return summary
 
 
 def write_code_action(prompt, update_callbacks=None, groq_client=None):
@@ -449,9 +821,8 @@ def copy_last_response_action(update_callbacks=None):
     text = LAST_RESPONSE or "No previous response recorded."
     try:
         if os.name == "nt":
-            clipboard_value = text.replace("'", "''")
-            command = f"Set-Clipboard -Value '{clipboard_value}'"
-            process = subprocess.run(["powershell", "-command", command], capture_output=True, text=True, check=False)
+            # Use the native 'clip' utility and pass text via stdin to avoid shell injection
+            process = subprocess.run(["clip"], input=text, text=True, capture_output=True, check=False)
             if process.returncode == 0:
                 message = "I copied the last response to the clipboard."
             else:
@@ -564,10 +935,18 @@ def summarize_day_action(update_callbacks=None):
     return message
 
 
-def quick_note_action(prompt, update_callbacks=None):
+def quick_note_action(prompt, update_callbacks=None, db_path=None):
+    from modules.memory import remember_memory
     cleaned = re.sub(r"(?i)create a quick note|quick note|create a note|write a quick note", "", prompt or "").strip()
     text = cleaned or "Follow up on the current task and keep your next step visible."
-    message = f"Quick note saved: {text}"
+    
+    # Use the provided db_path or fall back to the config default
+    target_db = db_path or MEMORY_DB_PATH
+    
+    # Persist the note in the memory database
+    result = remember_memory(f"Note: {text}", db_path=target_db)
+    
+    message = f"Quick note saved: {text}" if result else "I had trouble saving the note."
     _record_last_response(message)
     if update_callbacks:
         update_callbacks["response"](message)

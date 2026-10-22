@@ -35,35 +35,39 @@ def _detect_emotion(text):
 
 def get_voice_profile_for_text(text):
     emotion = _detect_emotion(text)
+    # Adjusted for a "Butler/Sophisticated AI" feel:
+    # Rates are slower for sophistication, slightly faster for urgency.
     profiles = {
-        "warm": {"rate": 215, "pitch": 1.42, "volume": 1.0},
-        "focused": {"rate": 190, "pitch": 1.18, "volume": 1.0},
-        "serious": {"rate": 170, "pitch": 1.0, "volume": 1.0},
-        "gentle": {"rate": 165, "pitch": 1.32, "volume": 0.9},
-        "playful": {"rate": 225, "pitch": 1.5, "volume": 1.0},
-        "reassuring": {"rate": 200, "pitch": 1.28, "volume": 1.0},
-        "thoughtful": {"rate": 180, "pitch": 1.2, "volume": 0.95},
-        "confident": {"rate": 205, "pitch": 1.25, "volume": 1.0},
+        "warm": {"rate": 180, "volume": 1.0},        # Soft, welcoming
+        "focused": {"rate": 170, "volume": 1.0},     # Precise and clear
+        "serious": {"rate": 150, "volume": 1.1},     # Slow, weighty, authoritative
+        "gentle": {"rate": 155, "volume": 0.8},      # Quiet and soothing
+        "playful": {"rate": 210, "volume": 1.0},     # Brisk and energetic
+        "reassuring": {"rate": 175, "volume": 1.0},   # Steady and calm
+        "thoughtful": {"rate": 160, "volume": 0.9},  # Pensive, slower pace
+        "confident": {"rate": 185, "volume": 1.0},   # The standard "JARVIS" tone
     }
     return profiles.get(emotion, profiles["confident"])
 
 
-def _select_female_voice(engine):
+def _select_sophisticated_voice(engine):
     voices = engine.getProperty("voices") or []
+    # Priority list for the "Butler" vibe: British English, then refined Female voices
     preferred_names = [
-        "zira", "samantha", "susan", "female", "aria", "karen", "victoria",
-        "lily", "alice", "serena", "megan", "jenny", "hazel", "natalie"
+        "hazel", "george", "samantha", "zira", "victoria", "aria", "katherine", "william"
     ]
 
+    # 1. Look for specific high-quality "Butler" names
     for preferred in preferred_names:
         for voice in voices:
             voice_name = (voice.name or "").lower()
             if preferred in voice_name:
                 return voice.id
 
+    # 2. Fallback to any English (UK/US) female voice for that crisp, clear AI feel
     for voice in voices:
         voice_name = (voice.name or "").lower()
-        if any(token in voice_name for token in ["female", "woman", "girl", "zira", "samantha", "susan", "aria"]):
+        if any(token in voice_name for token in ["female", "woman", "english", "uk"]):
             return voice.id
 
     return voices[0].id if voices else None
@@ -91,16 +95,13 @@ def speak(text):
                 speech_is_active = True
                 engine = pyttsx3.init()
                 profile = get_voice_profile_for_text(message)
+                
+                # Set the "Butler" parameters
                 engine.setProperty("rate", profile["rate"])
-                # SAPI5 does not support pitch and emits a warning when it is set.
-                if os.name != "nt":
-                    try:
-                        engine.setProperty("pitch", profile["pitch"])
-                    except Exception:
-                        print("[TTS] Pitch adjustment unsupported on this engine; using default pitch.")
                 engine.setProperty("volume", profile["volume"])
 
-                selected_voice = _select_female_voice(engine)
+                # Select the most sophisticated voice available
+                selected_voice = _select_sophisticated_voice(engine)
                 if selected_voice:
                     engine.setProperty("voice", selected_voice)
 

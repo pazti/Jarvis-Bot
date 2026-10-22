@@ -25,8 +25,10 @@ Your responses must be intelligent, secure-by-design focused, sharp, witty, and 
 # --- AUDIO CONFIGURATION ---
 SAMPLE_RATE = 16000
 CHUNK = 1024
-SILENCE_THRESHOLD = 0.02  # Voice activation threshold
-SILENCE_FRAMES = 18  # ~1.2 seconds of silence stops recording (natural pause tolerance)
+SILENCE_THRESHOLD = 0.005  # More sensitive for quiet laptop/internal mics
+SILENCE_FRAMES = 10  # ~0.7 seconds of silence to stop recording
+AUDIO_INPUT_DEVICE = os.getenv("AUDIO_INPUT_DEVICE")
+AUDIO_INPUT_DEVICE_NAME = (os.getenv("AUDIO_INPUT_DEVICE_NAME") or "").lower()
 VOICE_GENDER = "female"
 VOICE_RATE = 210
 VOICE_PITCH = 1.25

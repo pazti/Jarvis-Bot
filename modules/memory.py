@@ -196,9 +196,21 @@ def extract_fact_from_prompt(prompt, db_path=None):
 
 
 def remember_memory(prompt, db_path=None):
+    # To ensure a note is always saved regardless of prompt structure,
+    # we provide a fallback if extract_fact_from_prompt fails.
     result = extract_fact_from_prompt(prompt, db_path=db_path)
     if result:
         return result["value"]
+    
+    # Fallback for "quick notes" that might not fit the factual extraction patterns
+    # We treat the entire prompt as a value for a generic 'user_note' key.
+    text = (prompt or "").strip()
+    if text:
+        category = _detect_category(text)
+        key = "user_note" if category == "general" else f"{category}_note"
+        save_fact(key, text, category=category, db_path=db_path)
+        return text
+        
     return None
 
 
