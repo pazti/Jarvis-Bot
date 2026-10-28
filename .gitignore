@@ -6,3 +6,5 @@ __pycache__/
 /jarvis_memory.db
 /jarvis_memory.db-shm
 /jarvis_memory.db-wal
+/browser_sessions/
+/backups/

@@ -28,7 +28,7 @@ JARVIS is a personal AI assistant built for voice interaction, real-time screen 
 
 1. **Input**: The app listens for voice input and transcribes via Groq Whisper.
 2. **Routing**: The prompt is parsed for wake words, actions, and screen-analysis intents.
-3. **Reasoning**: Groq's pinned `openai/gpt-oss-20b` model answers normally or selects from structured, allowlisted tools.
+3. **Reasoning**: The configured Groq model (default `openai/gpt-oss-20b`) answers normally or selects from structured, allowlisted tools.
 4. **Execution**: If a workflow is triggered, JARVIS creates a track in SQLite and executes steps via `workflow_handlers`.
 5. **Output**: Results are spoken aloud using dynamic prosody and rendered on the HUD.
 
@@ -51,8 +51,7 @@ source .venv/bin/activate  # Mac/Linux
 
 # Install dependencies
 pip install -r requirements.txt
-# IMPORTANT: Install Playwright for TikTok/Browser automation
-pip install playwright
+# Optional: install Chromium if using the standalone browser integration
 python -m playwright install chromium
 ```
 
@@ -67,8 +66,8 @@ ASSISTANT_NAME=JARVIS
 ADDRESS_AS=Sir
 ```
 
-`GROQ_API_KEY` is required to start the assistant. The Groq model is pinned to
-`openai/gpt-oss-20b` in `modules/config.py`; it is not overridden through `.env`.
+`GROQ_API_KEY` is required to start the assistant. `GROQ_MODEL` optionally
+selects the Groq model; its default is `openai/gpt-oss-20b`.
 The HUD's **SETTINGS** panel edits and saves the three identity values above to `.env`.
 
 ### 4) Run the Assistant
@@ -83,10 +82,11 @@ python main.py
 - **"Sleep JARVIS"** / **"Goodbye"** $\rightarrow$ Enter sleep mode
 - **"Wake up"** / **"Wake JARVIS"** $\rightarrow$ Exit sleep mode
 
-### TikTok & Business Intelligence (Free & Unlimited)
-- **"JARVIS, login to TikTok"** $\rightarrow$ Opens browser for one-time manual login.
-- **"JARVIS, analyze the performance of [Username]"** $\rightarrow$ Scrapes analytics and provides growth tips.
+### Business Intelligence
 - **"Find [Category] in [City] without websites"** $\rightarrow$ Search OpenStreetMap, filter for no-website businesses, and save a CSV report.
+
+The standalone TikTok browser integration is not currently exposed through the
+assistant's voice or structured-tool router.
 
 ### System & Browser Control
 - **"Research [topic]"** $\rightarrow$ Search DuckDuckGo using a main query and related angles, then save result titles, snippets, and source links to a Markdown report in `research/`.
