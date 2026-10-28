@@ -1,7 +1,7 @@
 python-dotenv==1.2.3
 groq==1.7.0
 requests==2.34.2
-numpy==2.5.3
+numpy==2.2.6
 pygame-ce==2.5.8
 pyttsx3==2.99
 sounddevice==0.5.6
