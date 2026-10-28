@@ -1,12 +1,13 @@
 # --- AUDIO.PY ---
 # Microphone stream & Voice Activity Detection (VAD)
 
-import os
+import logging
 import queue
+import sys
 import threading
-import time
 import numpy as np
 import sounddevice as sd
+from modules import config
 from modules.config import (
     SAMPLE_RATE,
     CHUNK,
@@ -17,6 +18,8 @@ from modules.config import (
 )
 from modules.brain import transcribe_audio
 from modules.tts import is_speaking
+
+logger = logging.getLogger(__name__)
 
 # Audio state
 audio_queue = queue.Queue(maxsize=100)
@@ -39,11 +42,9 @@ def audio_callback(indata, frames, time, status):
     """Callback for sounddevice audio stream."""
     global current_volume, skip_audio
     if status:
-        import sys
         status_str = str(status).lower()
-        # Suppress input overflow warnings - they're expected under heavy load
         if "overflow" not in status_str:
-            print(status, file=sys.stderr)
+            logger.warning(status)
 
     # Don't record if we're processing or if JARVIS is currently speaking
     if skip_audio or is_speaking():
@@ -76,8 +77,8 @@ def speech_worker():
             pcm_data, volume = audio_queue.get(timeout=1)
         except queue.Empty:
             continue
-        except Exception as e:
-            print(f"[AUDIO] Queue error: {e}")
+        except RuntimeError as exc:
+            logger.warning("Audio queue error: %s", exc)
             continue
 
         # While sleeping, only listen for wake words
@@ -103,6 +104,8 @@ def speech_worker():
             continue
 
         if volume > SILENCE_THRESHOLD:
+            if "note_activity" in _state_setters:
+                _state_setters["note_activity"]()
             speaking = True
             silent_chunks = 0
             recorded_frames.append(pcm_data)
@@ -113,7 +116,7 @@ def speech_worker():
             silent_chunks += 1
 
             if silent_chunks >= SILENCE_FRAMES:
-                print(f"[AUDIO] Silence detected. Processing {len(recorded_frames)} frames...")
+                logger.info("Silence detected. Processing %s frames...", len(recorded_frames))
                 is_processing = True
                 skip_audio = True  # Turn off mic immediately
                 if "processing" in _state_setters:
@@ -132,13 +135,14 @@ def speech_worker():
                     "processing": _state_setters.get("processing", lambda x: None),
                     "skip_audio": _state_setters.get("skip_audio", lambda x: None),
                     "set_sleeping": _state_setters.get("set_sleeping", lambda x: None),
+                    "set_muted": _state_setters.get("set_muted", lambda x: None),
                 }
 
-                print(f"[AUDIO] Starting transcription thread...")
+                logger.info("Starting transcription thread...")
                 def transcribe_with_sleep():
                     result = transcribe_audio(full_audio, callbacks)
                     if result == "SHUTDOWN":
-                        print("[AUDIO] SHUTDOWN signal received from brain - sleep mode activated by callback")
+                        logger.info("SHUTDOWN signal received from brain - sleep mode activated by callback")
                 
                 threading.Thread(
                     target=transcribe_with_sleep,
@@ -150,8 +154,8 @@ def _resolve_input_device():
     """Pick the most likely microphone device for this machine."""
     try:
         devices = sd.query_devices()
-    except Exception as exc:
-        print(f"[AUDIO] Could not list devices: {exc}")
+    except (OSError, RuntimeError) as exc:
+        logger.warning("Could not list audio devices: %s", exc)
         return None
 
     requested = (AUDIO_INPUT_DEVICE or "").strip()
@@ -185,7 +189,7 @@ def start_audio_stream():
     threading.Thread(target=speech_worker, daemon=True).start()
 
     device_index = _resolve_input_device()
-    print(f"[AUDIO] Using input device index: {device_index}")
+    logger.info("Using input device index: %s", device_index)
 
     stream = sd.InputStream(
         samplerate=SAMPLE_RATE,
@@ -242,13 +246,15 @@ def _process_wake_word(audio_bytes):
     
     try:
         if check_wake_word(audio_bytes):
-            print("[AUDIO] Wake word detected!")
+            logger.info("Wake word detected!")
             is_sleeping = False
             if "status" in _state_setters:
-                _state_setters["status"]("JARVIS awakening...")
+                _state_setters["status"](f"{config.ASSISTANT_NAME} awakening...")
             if "response" in _state_setters:
-                _state_setters["response"]("Hello, Sir. JARVIS online.")
+                _state_setters["response"](
+                    f"Hello, {config.ADDRESS_AS}. {config.ASSISTANT_NAME} online."
+                )
             from modules.tts import speak
-            speak("Hello, Sir. JARVIS online.")
-    except Exception as e:
-        print(f"[AUDIO] Wake word check error: {e}")
+            speak(f"Hello, {config.ADDRESS_AS}. {config.ASSISTANT_NAME} online.")
+    except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        logger.warning("Wake word check error: %s", exc)
