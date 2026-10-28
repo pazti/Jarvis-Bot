@@ -1,11 +1,22 @@
 import os
 import re
 import sqlite3
+import threading
+from functools import wraps
 
 from modules.config import GROQ_MODEL
 
 DEFAULT_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "jarvis_memory.db")
 _ACTIVE_DB_PATH = DEFAULT_DB_PATH
+_DB_LOCK = threading.RLock()
+
+
+def _serialized(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with _DB_LOCK:
+            return function(*args, **kwargs)
+    return wrapped
 
 MEMORY_CATEGORIES = {
     "general": "general",
@@ -28,7 +39,9 @@ def _connect(db_path=None):
     if directory and not os.path.exists(directory):
         os.makedirs(directory, exist_ok=True)
 
-    connection = sqlite3.connect(target)
+    connection = sqlite3.connect(target, timeout=10, check_same_thread=False)
+    connection.execute("PRAGMA busy_timeout = 10000")
+    connection.execute("PRAGMA journal_mode = WAL")
     connection.row_factory = sqlite3.Row
     return connection
 
@@ -40,6 +53,7 @@ def _normalize_category(category):
     return MEMORY_CATEGORIES.get(key, key if key else "general")
 
 
+@_serialized
 def init_memory_db(db_path=None):
     global _ACTIVE_DB_PATH
     _ACTIVE_DB_PATH = db_path or _ACTIVE_DB_PATH
@@ -69,6 +83,7 @@ def init_memory_db(db_path=None):
     connection.close()
 
 
+@_serialized
 def save_message(role, content, db_path=None):
     init_memory_db(db_path)
     connection = _connect(_resolve_db_path(db_path))
@@ -80,6 +95,7 @@ def save_message(role, content, db_path=None):
     connection.close()
 
 
+@_serialized
 def get_recent_conversation(db_path=None, limit=10):
     init_memory_db(db_path)
     connection = _connect(_resolve_db_path(db_path))
@@ -92,6 +108,7 @@ def get_recent_conversation(db_path=None, limit=10):
     return [dict(row) for row in reversed(rows)]
 
 
+@_serialized
 def save_fact(key, value, category="general", db_path=None):
     init_memory_db(db_path)
     category = _normalize_category(category)
@@ -109,6 +126,7 @@ def save_fact(key, value, category="general", db_path=None):
     connection.close()
 
 
+@_serialized
 def get_facts(db_path=None, limit=20, category=None):
     init_memory_db(db_path)
     connection = _connect(_resolve_db_path(db_path))
@@ -171,7 +189,11 @@ def extract_fact_from_prompt(prompt, db_path=None):
             save_fact(key, reminder, category=category, db_path=db_path)
             return {"key": key, "value": reminder, "category": category}
 
-    match = re.search(r"(?:my\s+)?([a-zA-Z0-9_\s]+?)\s+(?:is|are|equals|=)\s+(.+)", text, flags=re.IGNORECASE)
+    match = re.search(
+        r"\bmy\s+([a-zA-Z0-9_\s]+?)\s+(?:is|are|equals|=)\s+(.+)",
+        text,
+        flags=re.IGNORECASE,
+    )
     if match:
         key_text = match.group(1).strip()
         value_text = match.group(2).strip().strip(".?!")
@@ -214,6 +236,7 @@ def remember_memory(prompt, db_path=None):
     return None
 
 
+@_serialized
 def forget_memory(prompt, db_path=None):
     text = (prompt or "").strip()
     if not text:
@@ -310,6 +333,7 @@ def build_summary_from_conversation(messages):
     return " | ".join(summary_items[-8:])
 
 
+@_serialized
 def trim_conversation_for_summary(db_path=None, max_messages=10):
     init_memory_db(db_path)
     connection = _connect(_resolve_db_path(db_path))
@@ -342,6 +366,7 @@ def trim_conversation_for_summary(db_path=None, max_messages=10):
     return build_summary_from_conversation(recent)
 
 
+@_serialized
 def clear_memory(db_path=None):
     init_memory_db(db_path)
     connection = _connect(_resolve_db_path(db_path))

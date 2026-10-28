@@ -1,5 +1,6 @@
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 import unittest
 
 from modules.memory import (
@@ -41,6 +42,15 @@ class MemoryTests(unittest.TestCase):
         self.assertEqual(facts[0]["key"], "name")
         self.assertEqual(facts[0]["value"], "Paul")
 
+    def test_concurrent_writes_are_serialized(self):
+        def write_fact(index):
+            save_fact(f"fact_{index}", f"value_{index}", db_path=self.db_path)
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            list(executor.map(write_fact, range(32)))
+
+        self.assertEqual(len(get_facts(db_path=self.db_path, limit=40)), 32)
+
     def test_build_memory_context_uses_recent_and_facts(self):
         save_message("user", "I like python")
         save_message("assistant", "Great, I can help with Python")
@@ -73,6 +83,16 @@ class MemoryTests(unittest.TestCase):
         self.assertIsNotNone(fact)
         self.assertEqual(fact["key"], "favorite_language")
         self.assertEqual(fact["value"], "Python")
+
+    def test_ordinary_conversation_questions_are_not_saved_as_long_term_memory(self):
+        for prompt in (
+            "Thank you.",
+            "Show my memory.",
+            "What is your current location?",
+        ):
+            self.assertIsNone(extract_fact_from_prompt(prompt, db_path=self.db_path))
+
+        self.assertEqual(get_facts(db_path=self.db_path), [])
 
     def test_trim_conversation_for_summary(self):
         for index in range(1, 16):
