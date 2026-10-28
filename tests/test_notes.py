@@ -1,5 +1,4 @@
 import unittest
-from unittest.mock import patch, MagicMock
 import modules.actions as actions
 from modules.memory import get_memory_summary
 import os
