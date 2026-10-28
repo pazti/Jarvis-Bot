@@ -3,7 +3,6 @@
 
 import logging
 import queue
-import sys
 import threading
 import numpy as np
 import sounddevice as sd
