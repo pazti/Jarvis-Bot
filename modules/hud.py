@@ -3,6 +3,7 @@
 import math
 import pygame
 import random
+from modules import config
 from modules.config import (
     WINDOW_WIDTH,
     WINDOW_HEIGHT,
@@ -15,7 +16,7 @@ from modules.config import (
 )
 
 # HUD state
-status_text = "Listening... Speak into your mic, Sir!"
+status_text = f"Listening... Speak into your mic, {config.ADDRESS_AS}!"
 user_text = ""
 ai_response_text = ""
 is_muted = False
@@ -36,6 +37,12 @@ task_panel_width = 300
 current_task_name = ""
 current_task_steps = [] # List of {"title": str, "status": "pending"|"running"|"done"}
 task_active = False
+settings_panel_open = False
+settings_values = [config.USER_NAME, config.ASSISTANT_NAME, config.ADDRESS_AS]
+settings_active_field = None
+settings_field_rects = []
+settings_save_rect = None
+settings_error = ""
 
 # Pygame objects
 screen = None
@@ -66,6 +73,10 @@ def update_user_text(text):
 def update_response_text(text):
     global ai_response_text
     ai_response_text = text
+
+def set_muted(value):
+    global is_muted
+    is_muted = bool(value)
 
 def update_task_progress(name, steps, active=True):
     """Updates the side-bar with current task progress."""
@@ -119,22 +130,47 @@ def render_frame(current_volume):
     for y in range(grid_offset, WINDOW_HEIGHT, 40):
         pygame.draw.line(screen, (10, 30, 60), (0, y), (WINDOW_WIDTH, y))
 
-    # --- Mute Button ---
+    # --- Mute and Settings Buttons ---
     mute_color = (255, 50, 50) if is_muted else (50, 200, 50)
     mute_text = "MUTED" if is_muted else "MIC ON"
     mute_surf = font.render(mute_text, True, mute_color)
     screen.blit(mute_surf, (WINDOW_WIDTH - 100, 20))
+    settings_surf = font.render("SETTINGS", True, (100, 200, 255))
+    screen.blit(settings_surf, (WINDOW_WIDTH - 205, 20))
+
+    if settings_panel_open:
+        draw_glass_panel(screen, WINDOW_WIDTH - 355, 55, 345, 205, "Identity Settings")
+        labels = ["User name", "Assistant name", "Address as"]
+        settings_field_rects.clear()
+        for index, (label, value) in enumerate(zip(labels, settings_values)):
+            field_y = 90 + index * 42
+            label_surface = font.render(label, True, (200, 220, 255))
+            screen.blit(label_surface, (WINDOW_WIDTH - 345, field_y))
+            field_rect = pygame.Rect(WINDOW_WIDTH - 225, field_y - 3, 205, 28)
+            settings_field_rects.append(field_rect)
+            border = (0, 220, 255) if settings_active_field == index else (70, 100, 140)
+            pygame.draw.rect(screen, (15, 25, 45), field_rect, border_radius=4)
+            pygame.draw.rect(screen, border, field_rect, 1, border_radius=4)
+            value_surface = font.render(value[:22], True, (255, 255, 255))
+            screen.blit(value_surface, (field_rect.x + 5, field_rect.y + 4))
+        settings_save_rect = pygame.Rect(WINDOW_WIDTH - 140, 220, 110, 28)
+        pygame.draw.rect(screen, (0, 90, 130), settings_save_rect, border_radius=5)
+        pygame.draw.rect(screen, (0, 200, 255), settings_save_rect, 1, border_radius=5)
+        screen.blit(font.render("SAVE", True, (255, 255, 255)), (settings_save_rect.x + 35, settings_save_rect.y + 4))
+        if settings_error:
+            screen.blit(font.render(settings_error[:38], True, (255, 100, 100)), (WINDOW_WIDTH - 345, 235))
 
     # --- Status HUD ---
     status_text_val = f"[{'MUTED' if is_muted else 'LISTENING'}] {status_text}"
     status_surf = font.render(status_text_val, True, (0, 220, 255))
     screen.blit(status_surf, (20, WINDOW_HEIGHT - 110))
 
-    # --- Memory Command Panel (Glass) ---
-    draw_glass_panel(screen, WINDOW_WIDTH - 295, 40, 285, 150, "Memory Commands")
-    for i, command in enumerate(MEMORY_COMMANDS[:6]):
-        label = font.render(f"• {command}", True, (200, 220, 255))
-        screen.blit(label, (WINDOW_WIDTH - 285, 72 + (i * 18)))
+    if not settings_panel_open:
+        # --- Memory Command Panel (Glass) ---
+        draw_glass_panel(screen, WINDOW_WIDTH - 295, 40, 285, 150, "Memory Commands")
+        for i, command in enumerate(MEMORY_COMMANDS[:6]):
+            label = font.render(f"- {command}", True, (200, 220, 255))
+            screen.blit(label, (WINDOW_WIDTH - 285, 72 + (i * 18)))
 
     # --- Chat Bar ---
     chat_bg = pygame.Rect(20, WINDOW_HEIGHT - 40, WINDOW_WIDTH - 40, 30)
@@ -148,7 +184,14 @@ def render_frame(current_volume):
         screen.blit(user_surf, (20, WINDOW_HEIGHT - 85))
 
     if ai_response_text:
-        draw_multiline_text(screen, f"JARVIS: {ai_response_text}", 20, WINDOW_HEIGHT - 60, font, (100, 255, 100))
+        draw_multiline_text(
+            screen,
+            f"{config.ASSISTANT_NAME}: {ai_response_text}",
+            20,
+            WINDOW_HEIGHT - 60,
+            font,
+            (100, 255, 100),
+        )
 
     # --- Task Side-Bar Animation ---
     # Smooth sliding interpolation
@@ -207,14 +250,48 @@ def render_frame(current_volume):
     clock.tick(FPS)
 
 def handle_event(event):
-    global is_muted, chat_input
+    global is_muted, chat_input, settings_panel_open, settings_active_field, settings_error, status_text
     if event.type == pygame.MOUSEBUTTONDOWN:
         mouse_pos = event.pos
-        if WINDOW_WIDTH - 110 <= mouse_pos[0] <= WINDOW_WIDTH - 10 and 10 <= mouse_pos[1] <= 40:
+        if WINDOW_WIDTH - 215 <= mouse_pos[0] <= WINDOW_WIDTH - 115 and 10 <= mouse_pos[1] <= 40:
+            settings_panel_open = not settings_panel_open
+            settings_active_field = None
+            settings_error = ""
+        elif settings_panel_open and settings_save_rect and settings_save_rect.collidepoint(mouse_pos):
+            try:
+                config.save_identity_settings(*settings_values)
+                settings_values[:] = [
+                    config.USER_NAME,
+                    config.ASSISTANT_NAME,
+                    config.ADDRESS_AS,
+                ]
+                status_text = f"Listening... Speak into your mic, {config.ADDRESS_AS}!"
+                pygame.display.set_caption(config.WINDOW_TITLE)
+                settings_error = "Saved"
+            except (OSError, ValueError) as error:
+                settings_error = str(error)
+        elif settings_panel_open and any(rect.collidepoint(mouse_pos) for rect in settings_field_rects):
+            settings_active_field = next(
+                index for index, rect in enumerate(settings_field_rects) if rect.collidepoint(mouse_pos)
+            )
+            settings_error = ""
+        elif settings_panel_open:
+            settings_active_field = None
+        elif WINDOW_WIDTH - 110 <= mouse_pos[0] <= WINDOW_WIDTH - 10 and 10 <= mouse_pos[1] <= 40:
             is_muted = not is_muted
             print(f"[HUD] Mute toggled: {is_muted}")
     elif event.type == pygame.KEYDOWN:
-        if event.key == pygame.K_RETURN:
+        if settings_panel_open and settings_active_field is not None:
+            if event.key == pygame.K_RETURN or event.key == pygame.K_TAB:
+                settings_active_field = (settings_active_field + 1) % len(settings_values)
+            elif event.key == pygame.K_BACKSPACE:
+                settings_values[settings_active_field] = settings_values[settings_active_field][:-1]
+            elif event.unicode and event.unicode.isprintable():
+                settings_values[settings_active_field] += event.unicode
+        elif settings_panel_open and event.key == pygame.K_ESCAPE:
+            settings_panel_open = False
+            settings_active_field = None
+        elif event.key == pygame.K_RETURN:
             request = chat_input.strip()
             chat_input = ""
             return request
