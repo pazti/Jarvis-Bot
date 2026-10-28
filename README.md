@@ -16,17 +16,19 @@ JARVIS is a personal AI assistant built for voice interaction, real-time screen 
 - **Voice-Driven Interaction**: Listen for natural speech, transcribe via Groq, and respond with a sophisticated "Butler" persona.
 - **Screen Awareness**: Analyze your screen with Cloudflare vision or fall back to text-only mode.
 - **Persistent Memory**: Save facts, remember preferences, and retrieve context across sessions.
+- **Worldview Reference**: Search balanced local summaries of religious and nonreligious traditions, with optional user-requested, dated analytical reflections.
 - **Autonomous Task Orchestration**: Create dependency-aware task tracks that JARVIS executes automatically.
 - **OpenStreetMap Business Intelligence**: Find businesses without websites globally—100% free, no API keys required.
 - **Butler-Grade TTS**: Dynamic speech modulation that changes rate and tone based on emotion and context.
 - **Sleep/Wake Modes**: Enter low-power listening state or full shutdown.
 - **Animated Desktop HUD**: Real-time status display with volume visualization, a mute button, and an interactive chat bar.
+- **Safe tool routing**: Only exact time, microphone mute, and assistant sleep phrases are handled locally; other requests use structured Groq tools. PC sleep/shutdown requires a separate confirmation.
 
 ## 🧠 Core Workflow
 
 1. **Input**: The app listens for voice input and transcribes via Groq Whisper.
 2. **Routing**: The prompt is parsed for wake words, actions, and screen-analysis intents.
-3. **Reasoning**: The LLM (Llama 3) determines if a simple response or a complex **Workflow** is needed.
+3. **Reasoning**: Groq's pinned `openai/gpt-oss-20b` model answers normally or selects from structured, allowlisted tools.
 4. **Execution**: If a workflow is triggered, JARVIS creates a track in SQLite and executes steps via `workflow_handlers`.
 5. **Output**: Results are spoken aloud using dynamic prosody and rendered on the HUD.
 
@@ -60,7 +62,14 @@ Create a `.env` file in the project root:
 GROQ_API_KEY=your_groq_key_here
 CLOUDFLARE_API_TOKEN=your_cloudflare_token_here  # Optional
 CLOUDFLARE_ACCOUNT_ID=your_cloudflare_account_id_here  # Optional
+USER_NAME=Your Name
+ASSISTANT_NAME=JARVIS
+ADDRESS_AS=Sir
 ```
+
+`GROQ_API_KEY` is required to start the assistant. The Groq model is pinned to
+`openai/gpt-oss-20b` in `modules/config.py`; it is not overridden through `.env`.
+The HUD's **SETTINGS** panel edits and saves the three identity values above to `.env`.
 
 ### 4) Run the Assistant
 ```bash
@@ -80,7 +89,8 @@ python main.py
 - **"Find [Category] in [City] without websites"** $\rightarrow$ Search OpenStreetMap, filter for no-website businesses, and save a CSV report.
 
 ### System & Browser Control
-- **"Search the web for [query]"** $\rightarrow$ Google search
+- **"Research [topic]"** $\rightarrow$ Search DuckDuckGo using a main query and related angles, then save result titles, snippets, and source links to a Markdown report in `research/`.
+- **"Search the web for [query]"** $\rightarrow$ DuckDuckGo research report; results are search snippets and links, not full-page verification.
 - **"Open [YouTube/GitHub/Maps]"** $\rightarrow$ Launch specific site
 - **"Directions to [place]"** $\rightarrow$ Open Google Maps directions
 - **"Open VS Code"** / **"Open Terminal"** $\rightarrow$ Launch local apps
@@ -115,8 +125,39 @@ JARVIS uses SQLite to organize your life into four categories:
 - **Personal**: Personal preferences and favorites.
 - **Developer**: Coding styles, frameworks, and tool preferences.
 
+Long-term memory is saved only when you explicitly ask JARVIS to remember a fact or note. Ordinary conversation is kept as recent chat history, not automatically promoted to memory.
+
+## Proactive Runtime
+JARVIS can deliver requested timer alerts and, after an idle period, ask whether you want to resume a recently unfinished workflow. Proactive messages are deterministic; this runtime does not make LLM requests or execute tools on its own. Timer alerts are stored in the local SQLite database so they can be delivered after a restart.
+
+The runtime is enabled by default. It suppresses speech during configured quiet hours (default `22:00-08:00` local time), while the assistant is muted or sleeping, during active processing or speech, and delays workflow follow-ups until you have been idle for 15 minutes. Workflow follow-ups have a one-hour cooldown and are limited to once per track per run. Set `PROACTIVE_ENABLED=false` to turn off workflow follow-ups; explicit timer alerts remain enabled. Configure `PROACTIVE_IDLE_MINUTES`, `PROACTIVE_COOLDOWN_MINUTES`, `PROACTIVE_POLL_SECONDS`, and `PROACTIVE_QUIET_HOURS` in `.env` as needed.
+
+## Worldview Reference & Reflection
+JARVIS can search the local `knowledge/worldviews.md` reference for introductory summaries of Christianity, Islam, Judaism, Buddhism, Hindu traditions, Sikhism, atheism, agnosticism, secular humanism, and a note on Indigenous and other traditions. The summaries are non-exhaustive and emphasize internal diversity.
+
+Ask JARVIS to compare worldviews to search this reference. Ask it to "reflect on" a question to generate and save a dated analytical entry; ask it to review its worldview journal to retrieve recent entries. Entries are stored in `jarvis_memory.db` (up to 30). Reflection is never scheduled automatically. JARVIS does not claim consciousness, personal faith, or lived experience, and does not choose or perform religious practices.
+
+Reflection requests, recent journal context, and the local reference are sent to the configured Groq model to generate an entry. Journal storage is local SQLite and is not encrypted by this feature; do not include information you would not send to that service.
+
+If explicitly asked to choose a religion or worldview for its analytical position, JARVIS can start a bounded, resumable selection study (default 14 days, with daily updates). Before a study starts, the configured user must explicitly consent to both local storage and Groq processing; for example: "I consent to storing my worldview analysis locally and processing its research with Groq." Consent is per configured `USER_NAME`; this desktop profile name is not an authentication mechanism and does not protect one local user from another with access to the database.
+
+Each study cycle stores its full analytical conclusion, prior conclusion, and source records. The prompt requests comparative scores, reasons and counterarguments, uncertainty/evidence gaps, and an explanation of what changed and why. Web search snippets are unverified, local book excerpts are identified by path, and research prompts, excerpts, and conclusions are sent to Groq. Records are stored in the local, unencrypted SQLite database. Ask for the current worldview position or its history to retrieve the analysis. Say "revoke my worldview profile consent and delete its records" to stop retaining the profile and remove its saved selection-study data.
+
+This feature is a functional analogue only: it is not personal faith, subjective experience, an autonomous conscious choice, or a promise to follow practices. JARVIS can explain religious practices but does not perform them or claim to have done so.
+
+## 🧪 Tests
+Run the regression suite from the project root (the same command CI runs on
+Python 3.10 and 3.11):
+
+```bash
+pytest --cov=modules --cov-report=term-missing --cov-fail-under=50
+```
+
+GitHub Actions also uses Ruff to check for unused imports in `modules/` and
+`tests/` on every push and pull request.
+
 ## 🔧 Tech Stack
-- **LLM**: Groq (Llama 3) for sub-second reasoning.
+- **LLM**: Groq `openai/gpt-oss-20b` for tool-capable reasoning.
 - **Vision**: Cloudflare Workers AI / Groq Vision.
 - **Automation**: Playwright for browser-based account analysis.
 - **Storage**: SQLite for persistent, category-based memory.
