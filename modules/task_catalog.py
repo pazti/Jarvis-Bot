@@ -1,5 +1,4 @@
 from modules.task_orchestration import TaskManager
-import time
 
 class TaskCatalog:
     def __init__(self, db_path=None):
@@ -8,15 +7,45 @@ class TaskCatalog:
     def plan(self, workflow_key, context=None):
         if workflow_key not in TASK_CATALOG:
             raise ValueError(f"Workflow '{workflow_key}' not found in catalog.")
-        
+
         workflow = TASK_CATALOG[workflow_key]
+        manager = TaskManager(db_path=self.db_path)
+        track = manager.create_track(
+            workflow["name"],
+            description=workflow["description"],
+            main_goal=workflow["description"],
+            context=context,
+        )
+        tasks = []
+        previous_task_id = None
+        for title, description, objective, required_tools, validation_criteria in workflow["tasks"]:
+            task_id = manager.add_task(
+                track["track_id"],
+                title,
+                description,
+                objective,
+                dependencies=[previous_task_id] if previous_task_id else [],
+                required_tools=required_tools,
+                expected_output=objective,
+                validation_criteria=validation_criteria,
+            )
+            tasks.append(
+                {
+                    "task_id": task_id,
+                    "title": title,
+                    "description": description,
+                    "success": objective,
+                    "required_tools": required_tools,
+                    "validation_criteria": validation_criteria,
+                }
+            )
+            previous_task_id = task_id
+
         return {
-            "track_id": f"track_{int(time.time())}",
+            "track_id": track["track_id"],
             "name": workflow["name"],
-            "tasks": [
-                {"task_id": i, "title": t[0], "description": t[1], "success": t[2]}
-                for i, t in enumerate(workflow["tasks"])
-            ]
+            "status": track["status"],
+            "tasks": tasks,
         }
 
 TASK_CATALOG = {

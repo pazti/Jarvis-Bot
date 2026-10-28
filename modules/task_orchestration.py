@@ -1,10 +1,14 @@
 import json
 import sqlite3
 import uuid
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
 from modules.config import MEMORY_DB_PATH
+
+_DATABASE_LOCK = threading.RLock()
+_WAL_DATABASES: set[str] = set()
 
 
 def _now():
@@ -17,18 +21,25 @@ class TaskDatabaseMixin:
         self._ensure_schema()
 
     def _connect(self):
-        connection = sqlite3.connect(self.db_path)
+        connection = sqlite3.connect(
+            self.db_path, timeout=10, check_same_thread=False
+        )
+        connection.execute("PRAGMA busy_timeout = 10000")
+        if self.db_path not in _WAL_DATABASES:
+            connection.execute("PRAGMA journal_mode = WAL")
+            _WAL_DATABASES.add(self.db_path)
         connection.row_factory = sqlite3.Row
         return connection
 
     @contextmanager
     def _session(self):
-        connection = self._connect()
-        try:
-            yield connection
-            connection.commit()
-        finally:
-            connection.close()
+        with _DATABASE_LOCK:
+            connection = self._connect()
+            try:
+                yield connection
+                connection.commit()
+            finally:
+                connection.close()
 
     def _ensure_schema(self):
         with self._session() as connection:
@@ -135,9 +146,29 @@ class TaskManager(TaskDatabaseMixin):
     def list_tasks(self, track_id):
         with self._session() as connection:
             rows = connection.execute(
-                "SELECT * FROM track_tasks WHERE track_id = ? ORDER BY created_at", (track_id,)
+                "SELECT * FROM track_tasks WHERE track_id = ? ORDER BY created_at, rowid",
+                (track_id,),
             ).fetchall()
         return [self._task(row) for row in rows]
+
+    def list_incomplete_tracks(self, limit=5, updated_since=None):
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            raise ValueError("Track limit must be a positive integer.")
+
+        query = (
+            "SELECT track_id, name, status, progress, updated_at FROM tracks "
+            "WHERE status IN ('PLANNING', 'IN_PROGRESS')"
+        )
+        parameters = []
+        if updated_since is not None:
+            query += " AND updated_at >= ?"
+            parameters.append(updated_since)
+        query += " ORDER BY updated_at DESC LIMIT ?"
+        parameters.append(limit)
+
+        with self._session() as connection:
+            rows = connection.execute(query, parameters).fetchall()
+        return [dict(row) for row in rows]
 
     def update_task(self, track_id, task_id, **updates):
         if "validation" in updates:

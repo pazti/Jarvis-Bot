@@ -1,10 +1,32 @@
 import os
 import subprocess
-import shutil
+import sys
 import zipfile
 from datetime import datetime
 from pathlib import Path
-import re
+
+def _run_unittest_suite():
+    project_root = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part).strip()
+    summary = next(
+        (line.strip() for line in reversed(output.splitlines()) if line.strip().startswith("Ran ")),
+        "No unittest summary was produced.",
+    )
+    if result.returncode:
+        raise RuntimeError(
+            f"Unit test suite failed with exit code {result.returncode}: "
+            f"{summary}\n{output[-3000:]}"
+        )
+    return f"Unit test suite passed: {summary}"
+
 
 def handle_project_health_check(task, context):
     """Handler for Project Health Check tasks."""
@@ -29,18 +51,15 @@ def handle_project_health_check(task, context):
         return {"result": "Config check: " + ", ".join(status)}
 
     if title == "Run tests and diagnostics":
-        # Attempt to run pytest if installed
-        try:
-            result = subprocess.run(["pytest", "--version"], capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                return {"result": "Pytest installed. Running diagnostics... (Mocked success for stability)"}
-            else:
-                return {"result": "Pytest not found. Skipping automated tests."}
-        except Exception as e:
-            return {"result": f"Diagnostics failed: {str(e)}"}
+        return {"result": _run_unittest_suite()}
 
     if title == "Report project health":
-        return {"result": "Health report: Project structure is sound. Configuration files are present. High value fix: Implement unit tests for new OSM module."}
+        return {
+            "result": (
+                "Health report: Project structure and configuration checks completed; "
+                "the unit test suite passed."
+            )
+        }
 
     return {"result": "Task completed."}
 
@@ -48,14 +67,15 @@ def handle_run_test_suite(task, context):
     """Handler for Run Test Suite tasks."""
     title = task["title"]
     if title == "Discover tests":
-        return {"result": "Tests discovered in /tests directory."}
+        project_root = Path(__file__).resolve().parent.parent
+        test_files = list((project_root / "tests").glob("test*.py"))
+        return {"result": f"Discovered {len(test_files)} test files."}
     if title == "Execute tests":
-        # In a real environment, we'd run 'pytest'. Here we simulate for safety.
-        return {"result": "Tests executed. 12 passed, 0 failed."}
+        return {"result": _run_unittest_suite()}
     if title == "Classify failures":
         return {"result": "No failures to classify."}
     if title == "Publish test report":
-        return {"result": "Test report published: 100% pass rate."}
+        return {"result": "Test report published from the completed unittest run."}
     return {"result": "Task completed."}
 
 def handle_dependency_audit(task, context):
