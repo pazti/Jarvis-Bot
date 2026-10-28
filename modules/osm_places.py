@@ -1,5 +1,4 @@
 import csv
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -96,7 +95,7 @@ def save_business_report(businesses, output_dir=None):
         writer = csv.DictWriter(report, fieldnames=fields)
         writer.writeheader()
         writer.writerows(businesses)
-    return output_path
+    return str(output_path)
 
 
 __all__ = ["save_business_report", "search_businesses_without_websites"]
